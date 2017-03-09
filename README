@@ -1,0 +1,82 @@
+ER Tools for Curry
+==================
+
+This directory contains tools for dealing with database applications
+specified by entity-relationship diagrams (ERDs) in Curry programs.
+
+----------------------------------------------------------------------
+
+ERD2CDBI compiler
+-----------------
+
+This tool transforms an ERD term into datatypes used in the
+Database.CDBI. libraries. It also creates an information file
+for the currypp SQL-Parser. This compiler is invoked by
+
+    erd2curry --db <sqlite3 db file> --cdbi <Curry program with ERD>
+
+----------------------------------------------------------------------
+
+ERD2Curry compiler
+------------------
+
+This is a compiler for database applications
+specified by entity-relationship diagrams (ERDs) into Curry programs.
+The basic ideas and details about this approach are described in
+
+B. Brassel, M. Hanus, M. Mueller:
+High-Level Database Programming in Curry
+In Proc. of the Tenth International Symposium on
+Practical Aspects of Declarative Languages (PADL 2008),  pp. 316-332,
+Springer LNCS 4902, 2008
+
+Usage information:
+------------------
+
+Default use without Umbrello UML Modeller but ERD term descriptions:
+
+1. Go to the directory where you want to create your Curry program and
+   create an ERD description as a Curry term of type ERD
+   (w.r.t. type definition given in module ERD.curry), e.g.,
+   stored in "mymodel.erdterm".
+
+2. Compile it into a Curry program with
+
+       erd2curry mymodel.erdterm
+
+   This generates two auxiliary files `ERDGeneric.curry` and
+   `KeyDatabase.curry` and a main file `<Model name>.curry>`
+   containing the Curry API operations to the database.
+
+
+Use with Umbrello UML Modeller (no longer actively supported):
+
+1. Create an XML description of the ERD (with Umbrello)
+   in xmi format, e.g., stored in "mymodel.xmi".
+
+2. Compile it into a Curry program with
+
+   erd2curry -x myerd.xmi
+
+
+Visualization:
+--------------
+
+To visualize an ERD term file as a graph with dotty, execute
+
+erd2curry -v mymodel.erdterm
+
+
+Examples:
+---------
+
+This directory contains two examples for ERD term files:
+
+* `Blog.erdterm`: a simple ERD model for a blog with entries, comments,
+  and tags.
+* `Uni.erdterm`: an ERD model for university lectures as
+  presented in the original paper cited above.
+
+---
+Further infos and contact:
+Michael Hanus <http://www.informatik.uni-kiel.de/~mh>
