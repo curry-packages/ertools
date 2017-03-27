@@ -6,6 +6,8 @@
 --- @version February 2015
 ------------------------------------------------------------------------------
 
+{-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
+
 module CodeGeneration(Option,Storage(..),ConsistencyTest(..),
                       isSQLite,erd2code) where
 
@@ -254,7 +256,6 @@ entity2datatype _ ername (Entity name attrs) =
   [CType (ername,name) Public [] [CCons (ername,name) Private argTypes],
    CTypeSyn (ername,name++"Tuple") Private [] (tupleType (tail argTypes))]
  where
-  arity = length attrs
   argTypes = map attrType attrs
 
 -- Create transformation between entity type and tuple representation:
@@ -599,7 +600,7 @@ entitySpec (s,eName) attrs v =
 -- Generate persistent dynamic predicate for an entity using SQLite3 DB
 -- of Sebastian Fischer's KeyDatabase module.
 predEntrySQLite :: QName -> [Attribute] -> CVisibility -> String -> CFuncDecl
-predEntrySQLite (s,eName) attrs v dbpath = 
+predEntrySQLite (s,eName) attrs v _ = 
   cmtfunc
     ("Database predicate representing the relation between keys and "++eName++
      " tuple entities.")
@@ -855,9 +856,6 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
    isMinMaxB (Relationship _ [REnd _ _ _, REnd _ _ c]) =
      case c of (Between i (Max j)) -> i>0 && j>i
                _                   -> False
-
-   getExactB (Relationship _ [REnd _ _ _, REnd _ _ (Exactly i)]) = i 
-   getMinB (Relationship _ [REnd _ _ _, REnd _ _ (Between i _)]) = i
 
    duplicate [] [] = []
    duplicate (Relationship _ [REnd _ _ _, REnd _ _ (Exactly i)]:exactRs) (p:ps) =
@@ -1312,6 +1310,7 @@ rel2code option name es r =
   then rolesR option name r es
   else roles name r
 
+isGeneratedR :: Relationship -> Bool
 isGeneratedR (Relationship n _) = n == ""
 
 --generierte Beziehung als Teil der Umsetzung einer n:m Beziehung
@@ -1592,6 +1591,7 @@ hasDefault (DateDom   d) = isJust d
 hasDefault (UserDefined _ d) = isJust d
 
 -- Get the default value of the attribute domain:
+getDefault :: Domain -> CExpr
 getDefault (IntDom    (Just d)) = CLit (CIntc d)
 getDefault (FloatDom  (Just d)) = CLit (CFloatc d)
 getDefault (StringDom (Just d)) = string2ac d

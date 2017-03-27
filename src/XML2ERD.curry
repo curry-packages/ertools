@@ -2,6 +2,8 @@
 --- module to convert Umbrello 1.5.52 output to datatype ERD 
 --------------------------------------------------------------------------
 
+{-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
+
 module XML2ERD(convert) where
 
 import Char
@@ -108,6 +110,7 @@ identities ((XElem t attrs _):elems)
           (id,name) : identities elems
       | otherwise = identities elems
     
+getAttrs :: XmlExp -> [(String, String)]
 getAttrs (XElem _ attrs _) = attrs
   
 
@@ -244,12 +247,23 @@ convertAttr idlist (XElem "UML:EntityAttribute" alist _) =
   Attribute name d pkey null 
 
 -- datatypes:                
-int    = ["Int","int"] 
-char   = ["Char", "char"]
+int :: [String]
+int = ["Int","int"] 
+
+char :: [String]
+char = ["Char", "char"]
+
+string :: [String]
 string = ["String","string", "text", "varchar"]
-float  = ["Float", "float", "Double", "double"]
-bool   = ["Bool", "bool"]
-date   = ["Date", "date"]
+
+float :: [String]
+float = ["Float", "float", "Double", "double"]
+
+bool :: [String]
+bool = ["Bool", "bool"]
+
+date :: [String]
+date = ["Date", "date"]
 
 convertDomain :: Maybe String -> Maybe String -> Domain
 convertDomain Nothing _ = error "domain missing"
@@ -297,9 +311,6 @@ convertDomain (Just t) (Just d) =
         CalendarTime year month day hour minute second 0
 
 -------------------------------------------------------------------------------
-test = do
-  xml <- readXmlFile "./Uni.xmi"
-  print (convert xml)
 
 {-
 (ERD "Uni" 

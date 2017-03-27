@@ -70,11 +70,12 @@ erd2curry -v mymodel.erdterm
 Examples:
 ---------
 
-This directory contains two examples for ERD term files:
+The directory `examples` contains two examples for the specification
+of ERD models:
 
-* `Blog.erdterm`: a simple ERD model for a blog with entries, comments,
+* `BlogERD.curry`: a simple ERD model for a blog with entries, comments,
   and tags.
-* `Uni.erdterm`: an ERD model for university lectures as
+* `UniERD.curry`: an ERD model for university lectures as
   presented in the original paper cited above.
 
 ---

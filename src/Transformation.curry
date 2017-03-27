@@ -4,6 +4,8 @@
 --- relationships and inserting foreign keys for simple relationships.
 ------------------------------------------------------------------------------
 
+{-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
+
 module Transformation(transform) where
 
 import Database.ERD 
@@ -78,12 +80,16 @@ rNRN ens rels r =
   in
   (e:ens, r1:r2:rels)
 
+rNRJ :: a -> Int -> Int -> String -> String -> [Entity]
+     -> [Relationship] -> Relationship -> ([Entity], [Relationship])
 rNRJ _ i2 i3 e1 e2 ens rels r@(Relationship rname _)  
   | i2==0 && i3==1 = (addFKey e1 e2 rname True False ens ens, (r:rels)) --(_,n):(0,1)
   | otherwise = let (r1,e,r2) = addExtraEntity r ens                    --(_,n):(_,i)
                 in 
                 (e:ens, r1:r2:rels) 
 
+rJRJ :: Int -> Int -> a -> Int -> String -> String -> [Entity]
+     -> [Relationship] -> Relationship -> ([Entity], [Relationship])
 rJRJ i1 i2 _ i4 e1 e2 ens rels r@(Relationship rname _) 
   | i1==0 && i2==1 = (addFKey e1 e2 rname True (i4==1) ens ens, (r:rels)) --(0,1):(0,1)/(0,1):(_,j)
   | otherwise = let (r1,e,r2) = addExtraEntity r ens                      --(_,i):(_,j)
@@ -91,7 +97,8 @@ rJRJ i1 i2 _ i4 e1 e2 ens rels r@(Relationship rname _)
                 (e:ens, r1:r2:rels) 
 
 
-addFKey :: String -> String -> String -> Bool -> Bool -> [Entity] -> [Entity] -> [Entity]
+addFKey :: String -> String -> String -> Bool -> Bool -> [Entity] -> [Entity]
+        -> [Entity]
 addFKey _ _ _ _ _ [] ens = ens
 addFKey e1 e2 rname null unique (e@(Entity n (a:attrs)) : ens) ens'
   | e2 == n = 
@@ -141,6 +148,7 @@ ensureUniqueAttributeNames :: Entity -> Entity
 ensureUniqueAttributeNames (Entity ename attrs) =
   Entity ename (uniqueNames [] attrs)
 
+uniqueNames :: [Attribute] -> [Attribute] -> [Attribute]
 uniqueNames oldattrs [] = reverse oldattrs
 uniqueNames oldattrs (attr@(Attribute aname dom key nll) : attrs) =
   if aname `elem` names

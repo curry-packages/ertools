@@ -2,6 +2,8 @@
 --- This module defines an operation to visualize an ERD term with dot.
 ---------------------------------------------------------------------
 
+{-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
+
 module ERD2Graph(viewERD) where
 
 import IO
@@ -15,6 +17,7 @@ import Distribution(getRcVar)
 -- If not, it will be represented as an arc with a label.
 -- However, some graph drawing tools have problems to write the
 -- labels in a good manner to the arcs.
+relationAsNode :: Bool
 relationAsNode = True
 
 -- Visualize an ERD term with dot.

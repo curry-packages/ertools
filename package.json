@@ -1,8 +1,8 @@
 {
     "name": "ertools",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "author": "Michael Hanus <mh@informatik.uni-kiel.de>",
-    "synopsis": "Tools for dealing with database applications pecified by entity-relationship diagrams",
+    "synopsis": "Tools for dealing with database applications specified by entity-relationship diagrams",
     "category": [ "Database" ],
     "dependencies": {
     },
@@ -12,7 +12,7 @@
         "main": "ERD2Curry"
     },
     "source": {
-        "git": "https://git.ps.informatik.uni-kiel.de/curry-packages/cass.git",
+        "git": "https://git.ps.informatik.uni-kiel.de/curry-packages/ertools.git",
         "tag": "$version"
     }
 }

@@ -1,4 +1,5 @@
-module ERD2Curry where
+module ERD2Curry( main, erd2curryWithDBandERD )
+  where
 
 import AbstractCurry.Files  (readCurry)
 import AbstractCurry.Select (imports)
@@ -16,13 +17,14 @@ import XML
 import CodeGeneration
 import ERD2CDBI (writeCDBI)
 import ERD2Graph
-import ERToolsPackageConfig(packagePath)
+import ERToolsPackageConfig(packagePath, packageVersion)
 import Transformation
 import XML2ERD
 
 systemBanner :: String
 systemBanner =
-  let bannerText = "ERD->Curry Compiler (Version of 09/03/17)"
+  let bannerText = "ERD->Curry Compiler (Version " ++ packageVersion ++
+                   " of 09/03/17)"
       bannerLine = take (length bannerText) (repeat '-')
    in bannerLine ++ "\n" ++ bannerText ++ "\n" ++ bannerLine
 
@@ -52,9 +54,7 @@ main = do
   putStrLn systemBanner
   args <- getArgs
   configs <- parseArgs defaultEROptions args
-  -- the directory containing the sources of this tool:
-  let erd2currysrcdir = packagePath </> "src"
-  callStart erd2currysrcdir configs
+  startERD2Curry configs
 
 parseArgs :: EROptions -> [String] -> IO (Maybe EROptions)
 parseArgs _ [] = return Nothing
@@ -92,7 +92,7 @@ helpText :: String
 helpText = unlines
   [ "Usage:"
   , ""
-  , "    erd2curry [-l] [-d] [-t] [-x] [-v] [--db <dir>] [--cdbi] <prog>"
+  , "    erd2curry [-l] [-d] [-t] [-x] [-v] [--db <dbfile>] [--cdbi] <prog>"
   , ""
   , "Parameters:"
   , "-l: generate interface to SQLite3 database (default)"
@@ -101,19 +101,29 @@ helpText = unlines
   , "-t: only transform ERD into ERDT term file"
   , "-v: only show visualization of ERD with dotty"
   , "--db <dbfile>: file of the SQLite3 database"
-  , "--cdbi: generate Curry module for Database.CDBI modules"
-  , "<prog>        : name of Curry program file containing ERD definition"
+  , "--cdbi       : generate Curry module for Database.CDBI modules"
+  , "<prog>       : name of Curry program file containing ERD definition"
   ]
 
-callStart :: String -> Maybe EROptions -> IO ()
-callStart _ Nothing = do
+--- Runs ERD2Curry with a given database and ERD term file or program.
+erd2curryWithDBandERD :: String -> String -> IO ()
+erd2curryWithDBandERD dbname erfile =
+  startERD2Curry
+    (Just defaultEROptions
+             { optStorage = SQLite dbname, optERProg = erfile })
+
+startERD2Curry :: Maybe EROptions -> IO ()
+startERD2Curry Nothing = do
   putStrLn $ "ERROR: Illegal arguments\n\n" ++ helpText
   exitWith 1
-callStart erd2currysrcdir (Just opts) = do
-  let orgfile = optERProg opts
-  erdfile <- if ".curry" `isSuffixOf` orgfile
-            then storeERDFromProgram orgfile
-            else return orgfile
+startERD2Curry (Just opts) = do
+  -- the directory containing the sources of this tool:
+  let erd2currysrcdir = packagePath </> "src"
+      orgfile         = optERProg opts
+  erdfile <- if ".curry"  `isSuffixOf` orgfile ||
+                ".lcurry" `isSuffixOf` orgfile
+               then storeERDFromProgram orgfile
+               else return orgfile
   if optVisualize opts
    then readERDTermFile erdfile >>= viewERD
    else start erd2currysrcdir opts erdfile "."
