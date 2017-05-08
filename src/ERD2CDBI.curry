@@ -53,8 +53,9 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
     "--- This file has been generated from `"++erdfname++"`\n"++
     "--- and contains definitions for all entities and relations\n"++
     "--- specified in this model.\n\n"++
-    pPrint (ppCurryProg defaultOptions
-                (CurryProg (name++"_CDBI") imports typeDecls funcDecls []))
+    pPrint
+     (ppCurryProg defaultOptions
+      (CurryProg (name++"_CDBI") imports Nothing [] [] typeDecls funcDecls []))
   infofilehandle <- openFile (name++"_SQLCode.info") WriteMode
   writeParserFile infofilehandle name ents rels dbPath
   hClose infofilehandle
@@ -75,7 +76,7 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
 
 genDBPathFunc :: String -> String -> CFuncDecl
 genDBPathFunc mname dbPath =
-  cmtfunc "The name of the SQLite database file."
+  stCmtFunc "The name of the SQLite database file."
           (mname,"sqliteDBFile")
           0 Public stringType [simpleRule [] (string2ac dbPath)]
 
@@ -263,16 +264,17 @@ getEntityTypeDecls mName ent =
 -- Generates a entity-datatype based on an entity.
 writeDatatype :: String -> Entity -> CTypeDecl
 writeDatatype mName (Entity name attrs)  = 
- CType (mName, name) Public [] [(CCons (mName, name) 
-                                       Public
-                                       (map (writeAttributes mName name) attrs))]
+ CType (mName, name) Public []
+       [(simpleCCons (mName, name) Public
+                     (map (writeAttributes mName name) attrs))]
+       [pre "Eq", pre "Show"]
                     
 -- Generates a ID-datatype based on an entity.
 writeID :: String -> Entity -> CTypeDecl
 writeID mName (Entity name _) = 
- CType (mName, (name++"ID")) Public [] [(CCons (mName, (name ++"ID"))
-                                               Public
-                                               [intType])] 
+ CType (mName, (name++"ID")) Public []
+       [(simpleCCons (mName, (name ++"ID")) Public [intType])]
+       [pre "Eq", pre "Show"]
 
 -- Generates all function declarations for an entity.                                               
 getEntityFuncDecls :: String -> Entity -> [CFuncDecl]
@@ -287,11 +289,11 @@ getEntityFuncDecls mName ent =
 -- Generates an entity-description based on an entity.
 writeDescription :: String -> Entity -> CFuncDecl
 writeDescription mName (Entity name attrs) = 
-  cmtfunc ("The ER description of the `" ++ name ++ "` entity.")
+  stCmtFunc ("The ER description of the `" ++ name ++ "` entity.")
         (mName, (firstLow name ++ "_CDBI_Description" ))
         0
         Public
-        (CTCons (mDescription, "EntityDescription") [baseType (mName, name)])
+        (applyTC (mDescription, "EntityDescription") [baseType (mName, name)])
         [(simpleRule [] (applyE (CSymbol (mDescription, "ED"))
                                 [(string2ac name),
                                  (list2ac (map writeTypes attrs)),
@@ -303,11 +305,11 @@ writeDescription mName (Entity name attrs) =
 -- Generates a table-type based on an entity.
 writeTables :: String -> Entity -> CFuncDecl
 writeTables mName (Entity name _) = 
-  cmtfunc ("The database table of the `" ++ name ++ "` entity.")
+  stCmtFunc ("The database table of the `" ++ name ++ "` entity.")
         (mName, firstLow name ++ "Table")
         0
         Public
-        (CTCons (mDescription, "Table") [])
+        (baseType (mDescription, "Table"))
         [(simpleRule [] (string2ac name))]
 
 -- Generates Column Descriptions based on an entity.        
@@ -317,12 +319,12 @@ writeColumnDescriptions mName (Entity name attrs) =
 
 writeColumnDescription :: String -> String -> Attribute -> CFuncDecl
 writeColumnDescription mName name a@(Attribute atr _ _ _) =
-  cmtfunc ("The description of the database column `" ++ atr ++
+  stCmtFunc ("The description of the database column `" ++ atr ++
            "` of the `" ++ name ++ "` entity.")
         (mName, firstLow name ++ atr ++ "ColDesc")
         0
         Public
-        (CTCons (mDescription, "ColumnDescription") 
+        (applyTC (mDescription, "ColumnDescription") 
                 [(writeAttributes mName name a)])
         [(simpleRule [] (applyE (CSymbol (mDescription, "ColDesc"))
                                 [(string2ac ("\"" ++ name ++ "\"." ++ "\"" 
@@ -341,12 +343,12 @@ writeColumns mName (Entity name attrs) =
 -- Generates a column-function from an attribute.
 writeColumn :: String -> String -> Attribute -> CFuncDecl
 writeColumn mName name a@(Attribute atr _ _ _) =
-    cmtfunc ("The database column `" ++ atr ++
+    stCmtFunc ("The database column `" ++ atr ++
              "` of the `" ++ name ++ "` entity.")
           (mName, firstLow name ++ "Column" ++ atr)
           0
           Public
-          (CTCons (mDescription, "Column") [(getAttributeType mName name a)])
+          (applyTC (mDescription, "Column") [(getAttributeType mName name a)])
           [(simpleRule [] (applyE (CSymbol (mDescription, "Column"))
                                   [(string2ac ("\"" ++ atr ++ "\"")),
                                    (string2ac ("\"" ++ name ++ "\"." 
@@ -377,7 +379,7 @@ writeGetterSetters mName (Entity name attrs) =
 -- Generates a setter method based on an attribute.
 writeSetter :: String -> String -> Int -> (Attribute, Int) -> CFuncDecl
 writeSetter mName eName len (att@(Attribute name _ _ _), i) = 
-  cmtfunc ("Sets the attribute `" ++ name ++
+  stCmtFunc ("Sets the attribute `" ++ name ++
            "` of the `" ++ eName ++ "` entity.")
         (mName, ("set" ++ eName ++ name))
         2
@@ -392,7 +394,7 @@ writeSetter mName eName len (att@(Attribute name _ _ _), i) =
 -- Generates a getter method based on an attribute.
 writeGetter :: String -> String -> Int -> (Attribute, Int) -> CFuncDecl
 writeGetter mName eName len (att@(Attribute name _ _ _), i) = 
-  cmtfunc ("Gets the attribute `" ++ name ++
+  stCmtFunc ("Gets the attribute `" ++ name ++
            "` of the `" ++ eName ++ "` entity.")
         (mName, ((firstLow eName) ++ name))
         1
@@ -595,17 +597,18 @@ writeTypes (Attribute _ (BoolDom _) _ _) = CSymbol (mConnection, "SQLTypeBool")
 writeTypes (Attribute _ (DateDom _) _ _) = CSymbol (mConnection, "SQLTypeDate")
 writeTypes (Attribute _ (KeyDom _) _ _) = CSymbol (mConnection, "SQLTypeInt")
 
---Generates id-to-Value function based on an entity.
+-- Generates id-to-Value function based on an entity.
 writeKeyToValueFunc :: String -> Entity -> [CFuncDecl]
 writeKeyToValueFunc mName (Entity name attrs) =
   case (head attrs) of
      (Attribute "Key" _ PKey _ ) -> 
-           [cfunc (mName , ((firstLow name) ++ "ID"))
+           [stCmtFunc ("id-to-value function for entity " ++ name)
+                  (mName , ((firstLow name) ++ "ID"))
                   1
                   Public
                   ((baseType (mName, ((name ++"ID")))) ~> 
-                       (CTCons ("Database.CDBI.Criteria", "Value") 
-                               [(baseType (mName, (name++"ID")))]))
+                       (applyTC ("Database.CDBI.Criteria", "Value") 
+                                [(baseType (mName, (name++"ID")))]))
                   [(simpleRule [(writeAttrLeftOneTwo mName name (head attrs))]
                                (applyF ("Database.CDBI.Criteria", "idVal") 
                                        [(cvar "key")]))]]
@@ -696,3 +699,5 @@ lowerCase str = map toLower str
 spaceN :: Int -> String
 spaceN n | n == 0 = ""
          | otherwise = ' ':(spaceN (n-1))
+
+----------------------------------------------------------------------------

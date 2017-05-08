@@ -37,16 +37,16 @@ Default use without Umbrello UML Modeller but ERD term descriptions:
 
 1. Go to the directory where you want to create your Curry program and
    create an ERD description as a Curry term of type ERD
-   (w.r.t. type definition given in module ERD.curry), e.g.,
-   stored in "mymodel.erdterm".
+   (w.r.t. type definition given in module `Database.ERD`), e.g.,
+   stored in `MyModel.curry`.
 
 2. Compile it into a Curry program with
 
-       erd2curry mymodel.erdterm
+       erd2curry MyModel.curry
 
-   This generates two auxiliary files `ERDGeneric.curry` and
-   `KeyDatabase.curry` and a main file `<Model name>.curry>`
-   containing the Curry API operations to the database.
+   This generates the auxiliary module `ERDGeneric.curry` and
+   and a main module `<Model name>.curry>` containing the
+   Curry API operations to the database.
 
 
 Use with Umbrello UML Modeller (no longer actively supported):

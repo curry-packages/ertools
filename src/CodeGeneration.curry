@@ -3,7 +3,7 @@
 --- from an already transformed ERD term.
 ---
 --- @author Michael Hanus, Marion Mueller
---- @version February 2015
+--- @version October 2016
 ------------------------------------------------------------------------------
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
@@ -21,8 +21,12 @@ import FiniteMap
 import Maybe
 
 type Option          = (Storage, ConsistencyTest)
+
 data Storage         = Files DBPath | SQLite DBPath | DB
+ deriving Eq
+
 type DBPath          = String
+
 data ConsistencyTest = WithConsistencyTest | WithoutConsistencyTest
 
 -- Should SQLite interface be generated?
@@ -33,7 +37,7 @@ isSQLite (storage,_) =
 
 -- The name of the KeyDatabase module:
 keyDatabaseMod :: String
-keyDatabaseMod = "KeyDatabaseSQLite"
+keyDatabaseMod = "Database.KeyDatabaseSQLite"
 
 erd2code :: Option -> ERD -> CurryProg
 erd2code opt@(_, consistencyTest) (ERD n es rs) =
@@ -44,7 +48,7 @@ erd2code opt@(_, consistencyTest) (ERD n es rs) =
       generatedEntities = filter isGenerated es
   in
   CurryProg n
-            imports
+            imports Nothing [] []
             (concatMap (entity2datatype opt n) entities 
              ++ map (entity2datatypeKey opt n) entities
              ++ concatMap (generatedEntity2datatype opt n) generatedEntities)
@@ -72,7 +76,7 @@ generateStorageDefinition (storage, _) n = case storage of
   _             -> []
  where
   dbFileDef path =
-   cfunc (n,"dbFile") 0 Private stringType
+   cfunc (n,"dbFile") 0 Private (emptyClassType stringType)
          [simpleRule [] (string2ac path)]
 
 generatedEntity2DBcode :: Option -> String -> [Relationship] -> Entity
@@ -91,19 +95,19 @@ generatedEntity2DBcode (storage, _) name allrels
                    DB            -> [predEntry1 (name,en) Private,
                                      entitySpec (name,en) attrs Private] ) ++
   [cfunc (name, e++a1) 1 Public
-         ((baseType (name,en)) ~> entityKeyType (name,d1))
+         (emptyClassType ((baseType (name,en)) ~> entityKeyType (name,d1)))
          [simpleRule [CPComb (name, en) [x, nix]]
                      (applyF (name, d1++"Key") [cvar "x"])],
    cfunc (name, e++a2) 1 Public
-         ((baseType (name,en)) ~> entityKeyType (name,d2))
+         (emptyClassType ((baseType (name,en)) ~> entityKeyType (name,d2)))
          [simpleRule [CPComb (name, en) [nix, x]]
                      (applyF (name, d2++"Key") [cvar "x"])],
    cmtfunc
      ("Dynamic predicate representing the "++en++" relation between "++
       d1++" entities and "++d2++" entities")
      (name, e) 2 Public
-     ((baseType (name, d1++"Key")) ~> entityKeyType (name,d2) 
-                                 ~> (baseType (db "Dynamic")))
+     (emptyClassType ((baseType (name, d1++"Key")) ~> entityKeyType (name,d2) 
+                                               ~> (baseType (db "Dynamic"))))
      [simpleRule [CPComb (name, d1++"Key") [cpvar "key1"], 
                   CPComb (name, d2++"Key") [cpvar "key2"]]
                  (applyF (name,e++"Entry")
@@ -127,8 +131,9 @@ generatedEntity2DBcode (storage, _) name allrels
      ("Inserts a new "++en++" relation between a "++d1++" entity and a "++
       d2++" entity")
      (name, "new"++en) 2 Public
-     ((baseType (name, d1++"Key")) ~> (baseType (name, d2++"Key")) 
-                                   ~> transactType)
+     (emptyClassType
+        ((baseType (name, d1++"Key")) ~> (baseType (name, d2++"Key")) 
+                                      ~> transactType))
      [simpleRule [cpvar "key1", cpvar "key2"]
               (seqTrans
                   ([existsDBKeyCall (name,d1) (Just (cvar "key1")),
@@ -156,15 +161,17 @@ generatedEntity2DBcode (storage, _) name allrels
      ("Deletes an existing "++en++" relation between a "++d1++" entity and a "++
       d2++" entity")
      (name, "delete"++en) 2 Public
-     ((baseType (name, d1++"Key")) ~> (baseType (name, d2++"Key")) 
-                                   ~> transactType)
+     (emptyClassType
+       ((baseType (name, d1++"Key")) ~> (baseType (name, d2++"Key")) 
+                                     ~> transactType))
      [simpleRule [cpvar "key1", cpvar "key2"]
                  (foldr (\a b -> applyF (db "|>>") [a,b]) deleteCall
                         mintests)],
    cmtfunc
      ("Gets the associated "++d1++" entities for a given "++d2++" entity")
      (name, "get"++d1++d2++"s") 2 Public
-     (baseType (name,d1) ~> CTCons transTC [listType (baseType (name,d2))])
+     (emptyClassType
+       (baseType (name,d1) ~> applyTC transTC [listType (baseType (name,d2))]))
      [simpleRule [cpvar "e"]
          (CLetDecl
              [CLocalPat (cpvar "ekey")
@@ -222,7 +229,8 @@ queryGeneratedEntity (s,eName) v =
   [cmtfunc
     ("Gets all "++eName++" relationship entities stored in the database.")
     (s,"queryAll"++eName++"s") 0 v
-    (CTCons (db "Query") [CTCons (pre "[]") [baseType (s,eName)]])
+    (emptyClassType
+       (applyTC (db "Query") [applyTC (pre "[]") [baseType (s,eName)]]))
     [simpleRule []
              (applyF (db "transformQ")
                      [applyF (pre "map")
@@ -232,8 +240,8 @@ queryGeneratedEntity (s,eName) v =
    cmtfunc
     ("Gets all "++eName++" relationship entities satisfying a given condition.")
     (s,"queryCond" ++ eName) 1 v
-    ((baseType (s,eName) ~> boolType)
-     ~> CTCons (db "Query") [listType (baseType (s,eName))])
+    (emptyClassType ((baseType (s,eName) ~> boolType)
+                     ~> applyTC (db "Query") [listType (baseType (s,eName))]))
     [simpleRule [cpvar "econd"]
                 (applyF (db "transformQ")
                         [applyF (pre "filter") [cvar "econd"],
@@ -253,7 +261,8 @@ getImports (Entity _ attrs) = getImportsAttrs attrs
 -- Create data type definitions for an entity:
 entity2datatype :: Option -> String -> Entity -> [CTypeDecl]
 entity2datatype _ ername (Entity name attrs) =
-  [CType (ername,name) Public [] [CCons (ername,name) Private argTypes],
+  [CType (ername,name) Public []
+         [simpleCCons (ername,name) Private argTypes] [pre "Eq"],
    CTypeSyn (ername,name++"Tuple") Private [] (tupleType (tail argTypes))]
  where
   argTypes = map attrType attrs
@@ -266,7 +275,7 @@ entity2trans _ ername (Entity name attrs) =
     (ername,lowerFirst name++"2tuple")
     1
     Private
-    (baseType (ername,name) ~> baseType (ername,name++"Tuple"))
+    (emptyClassType (baseType (ername,name) ~> baseType (ername,name++"Tuple")))
     [simpleRule [CPComb (ername,name) (replace nix 0 (map xn [1..arity]))]
                 (tupleExpr (map (\i->cvar ("x"++show i)) [2..arity]))],
    cmtfunc
@@ -274,8 +283,8 @@ entity2trans _ ername (Entity name attrs) =
     (ername,"keytuple2"++name)
     2
     Private
-    (baseType (erdgen "Key") ~> baseType (ername,name++"Tuple")
-     ~> baseType (ername,name))
+    (emptyClassType (baseType (erdgen "Key") ~> baseType (ername,name++"Tuple")
+                     ~> baseType (ername,name)))
     [simpleRule [xn 1, tuplePattern (map xn [2..arity])]
              (applyF (ername,name) (map (\i->cvar ("x"++show i)) [1..arity]))]]
  where
@@ -289,7 +298,7 @@ generatedEntity2trans _ ername (Entity name attrs) =
     (ername,lowerFirst name++"2tuple")
     1
     Private
-    (baseType (ername,name) ~> baseType (ername,name++"Tuple"))
+    (emptyClassType (baseType (ername,name) ~> baseType (ername,name++"Tuple")))
     [simpleRule [CPComb (ername,name) (map xn [1..arity])]
                 (tupleExpr (map (\i->cvar ("x"++show i)) [1..arity]))],
    cmtfunc
@@ -297,8 +306,8 @@ generatedEntity2trans _ ername (Entity name attrs) =
     (ername,"keytuple2"++name)
     2
     Private
-    (baseType (erdgen "Key") ~> baseType (ername,name++"Tuple")
-     ~> baseType (ername,name))
+    (emptyClassType (baseType (erdgen "Key") ~> baseType (ername,name++"Tuple")
+                     ~> baseType (ername,name)))
     [simpleRule [nix, tuplePattern (map xn [1..arity])]
              (applyF (ername,name) (map (\i->cvar ("x"++show i)) [1..arity]))]]
  where
@@ -319,13 +328,13 @@ datatypeKey :: QName -> CTypeExpr -> CTypeDecl
 datatypeKey (s, name) argType =
   let n = (s, name ++ "Key")
   in
-  CType n Public [] [CCons n Private [argType]] 
+  CType n Public [] [simpleCCons n Private [argType]] [pre "Eq", pre "Show"]
 
 generatedEntity2datatype :: Option -> String -> Entity -> [CTypeDecl]
 generatedEntity2datatype _ n (Entity name attrs) =
   [CType (n,name) Public [] 
-         [CCons (n,name) Private
-                (replicate (length attrs) (baseType (erdgen "Key")))],
+         [simpleCCons (n,name) Private
+                (replicate (length attrs) (baseType (erdgen "Key")))] [],
    CTypeSyn (n,name++"Tuple") Private []
             (tupleType (replicate (length attrs) (baseType (erdgen "Key"))))]
 
@@ -398,7 +407,7 @@ selector consname arity nth attr selname nthType isnull v fKeyDom =
   cmtfunc
     ("Gets the value of attribute \""++attr++"\" of a "++snd consname++
      " entity.")
-    selname 1 v selType
+    selname 1 v (emptyClassType selType)
     (if null fKeyDom
      then [simpleRule
              [CPComb consname (replace x (nth-1) (replicate arity nix))] 
@@ -433,7 +442,7 @@ mutator consname arity nth attr modname nthType isnull v fKeyDom =
     ("Sets the value of attribute \""++attr++"\" in a "++snd consname++
      " entity.")
     modname 1 v
-    (modType consname nthType isnull)
+    (emptyClassType (modType consname nthType isnull))
     [simpleRule [CPComb consname (replace nix (nth-1) (map xn [1..arity])),
                  if True --null fKeyDom
                  then x
@@ -461,7 +470,7 @@ entityKey (s,eName) attrs v =
   cmtfunc
     ("Gets the key of a "++eName++" entity.")
     (s,(lowerFirst eName) ++ "Key") 1 v
-    ((baseType (s,eName)) ~> (baseType (s,eName ++ "Key")))
+    (emptyClassType ((baseType (s,eName)) ~> (baseType (s,eName ++ "Key"))))
     [simpleRule [CPComb (s,eName) 
                         (replace x (key attrs) 
                                  (replicate (length attrs) nix))]
@@ -481,7 +490,7 @@ showEntityKey (s,eName) v =
     "(e.g., as URL parameters in web pages), but it should no be used\n"++
     "to store keys in other attributes!")
    (s,"show"++eName++"Key") 1 v
-   (baseType (s,eName) ~> stringType)
+   (emptyClassType (baseType (s,eName) ~> stringType))
    [simpleRule [cpvar "obj"]
                (applyF (erdgen "showDatabaseKey")
                        [string2ac eName,
@@ -496,7 +505,7 @@ readEntityKey (s,eName) v =
    ("Transforms a string into a key of a "++eName++" entity.\n"++
     "Nothing is returned if the string does not represent a reasonable key.")
    (s,"read"++eName++"Key") 1 v
-   (stringType ~> maybeType (baseType (s,eName++"Key")))
+   (emptyClassType (stringType ~> maybeType (baseType (s,eName++"Key"))))
    [simpleRule [cpvar "s"]
                (applyF (erdgen "readDatabaseKey")
                        [string2ac eName,
@@ -506,14 +515,15 @@ readEntityKey (s,eName) v =
 entityKeyToKey :: QName -> CVisibility -> CFuncDecl
 entityKeyToKey (s,eName) v =
  cfunc (s,(lowerFirst eName) ++ "KeyToKey") 1 v
-       ((baseType (s,eName ++ "Key")) ~> (baseType (erdgen "Key")))
+       (emptyClassType ((baseType (s,eName ++ "Key"))
+                        ~> (baseType (erdgen "Key"))))
        [simpleRule [CPComb (s,eName ++ "Key") [cpvar "k"]] (cvar "k")]
 
 entityMaybeKeyToKey :: QName -> CVisibility -> CFuncDecl
 entityMaybeKeyToKey (s,eName) v =
  cfunc (s,"maybe" ++ eName ++ "KeyToKey") 1 v
-       (maybeType (baseType (s,eName ++ "Key"))
-        ~> maybeType (baseType (erdgen "Key")))
+       (emptyClassType (maybeType (baseType (s,eName ++ "Key"))
+                        ~> maybeType (baseType (erdgen "Key"))))
        [simpleRule [CPComb (pre "Nothing") []] (constF (pre "Nothing")),
         simpleRule [CPComb (pre "Just") [CPComb (s,eName ++ "Key") [cpvar "k"]]]
                    (applyJust (cvar "k"))]
@@ -531,7 +541,8 @@ pred (s,eName) _ v = let ename = lowerFirst eName in
     ("Dynamic predicate representing the relation\nbetween keys and "++eName++
      " entities.")
     (s,ename) 1 v 
-    (baseType (s,eName++"Key") ~> baseType (s,eName) ~> baseType (db "Dynamic"))
+    (emptyClassType (baseType (s,eName++"Key")
+                     ~> baseType (s,eName) ~> baseType (db "Dynamic")))
     [CRule [cpvar "key",cpvar "obj"]
            (CGuardedRhs
              [(applyF (pre "=:=")
@@ -552,8 +563,8 @@ predEntry (s, eName) v dbpath =
     ("Database predicate representing the relation between keys and "++eName++
      " tuple entities.")
     (s,(lowerFirst eName) ++ "Entry") 2 v 
-    (baseType (erdgen "Key") ~> baseType (s,eName++"Tuple")
-     ~> baseType (db "Dynamic"))
+    (emptyClassType (baseType (erdgen "Key") ~> baseType (s,eName++"Tuple")
+                     ~> baseType (db "Dynamic")))
     [simpleRule []
              (applyF (db "persistent") 
                      [cvar ("\"file:" ++ dbpath ++ "/" ++ eName ++ "DB\"")])]
@@ -567,7 +578,7 @@ predEntry1 (s, eName) v =
   cmtfunc
     ("Database predicate representing "++eName++" entities.")
     (s,(lowerFirst eName) ++ "Entry") 1 v 
-    (baseType (s,eName) ~> baseType (db "Dynamic"))
+    (emptyClassType (baseType (s,eName) ~> baseType (db "Dynamic")))
     [simpleRule []
        (applyF (db "persistent1") 
                [cvar ("\"db:" ++ eName ++ "DB\""),
@@ -576,7 +587,7 @@ predEntry1 (s, eName) v =
 entitySpec :: QName -> [Attribute] -> CVisibility -> CFuncDecl
 entitySpec (s,eName) attrs v = 
   cfunc (s,(lowerFirst eName) ++ "Spec") 0 v
-        (CTCons (db "DBSpec") [baseType (s,eName)]) 
+        (emptyClassType (applyTC (db "DBSpec") [baseType (s,eName)]))
         [simpleRule [] (applyCons (s, eName) (length attrs) (reverse attrs))]
   where 
     applyCons :: QName -> Int -> [Attribute] -> CExpr
@@ -605,8 +616,9 @@ predEntrySQLite (s,eName) attrs v _ =
     ("Database predicate representing the relation between keys and "++eName++
      " tuple entities.")
     (s, lowerFirst eName ++ "Entry") 2 v
-    (baseType (erdgen "Key") ~> baseType (s,eName++"Tuple")
-     ~> baseType (db "Dynamic"))
+    (emptyClassType
+      (baseType (erdgen "Key") ~> baseType (s,eName++"Tuple")
+       ~> baseType (db "Dynamic")))
     [simpleRule [] 
                (applyF (db "persistentSQLite")
                   [constF (s,"dbFile"),
@@ -630,7 +642,8 @@ getEntity (s,eName) v =
   [cmtfunc
     ("Gets a "++eName++" entity stored in the database with the given key.")
     (s,"get" ++ eName) 1 v
-    ((baseType (s, eName ++ "Key")) ~> (CTCons transTC [baseType (s,eName)])) 
+    (emptyClassType
+     ((baseType (s, eName ++ "Key")) ~> (applyTC transTC [baseType (s,eName)])))
     [simpleRule [cpvar "key"]
                 (applyF (erdgen "getEntry")
                         [CSymbol (s,e++"Entry"),
@@ -639,7 +652,7 @@ getEntity (s,eName) v =
    cmtfunc
     ("Gets all "++eName++" entities stored in the database.")
     (s,"queryAll"++eName++"s") 0 v
-    (CTCons (db "Query") [listType (baseType (s,eName))])
+    (emptyClassType (applyTC (db "Query") [listType (baseType (s,eName))]))
     [simpleRule []
              (applyF (db "transformQ")
                      [applyF (pre "map")
@@ -649,8 +662,9 @@ getEntity (s,eName) v =
    cmtfunc
     ("Gets all "++eName++" entities satisfying a given condition.")
     (s,"queryCond" ++ eName) 1 v
-    ((baseType (s,eName) ~> baseType (pre "Bool"))
-     ~> CTCons (db "Query") [listType (baseType (s,eName))])
+    (emptyClassType
+      ((baseType (s,eName) ~> baseType (pre "Bool"))
+        ~> applyTC (db "Query") [listType (baseType (s,eName))]))
     [simpleRule [cpvar "econd"]
                 (applyF (db "transformQ")
                         [applyF (pre "filter") [cvar "econd"],
@@ -734,7 +748,7 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
   cmtfunc
     ("Inserts a new "++eName++" entity.")
     (str,"new" ++ eName ++ newSuffix) (length attrs) v
-    newFunType
+    (emptyClassType newFunType)
     [simpleRule
       (map cpvar parameter)
       (foldr (\a b -> applyF (db "|>>") [a,b])
@@ -868,7 +882,7 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
    newType :: QName -> [Attribute] -> [Relationship] -> [Relationship]
              -> [Relationship] -> [Relationship] -> CTypeExpr
    newType (m,n) [] exactRs maxRs minMaxRs rs 
-     | null exactRs && null maxRs && null minMaxRs = CTCons transTC [baseType (m,n)] 
+     | null exactRs && null maxRs && null minMaxRs = applyTC transTC [baseType (m,n)] 
      | length exactRs > 0 = nTExact (m,n) exactRs maxRs minMaxRs rs
      | length maxRs > 0 = nTMax (m,n) maxRs minMaxRs rs
      | otherwise = nTMinMax (m,n) minMaxRs rs
@@ -892,7 +906,7 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
      in
      (listType (ctvar keyType)) ~> (nTMax (m,n) maxRs minMaxRs rs) 
 
-   nTMinMax (m,n) [] _ = CTCons transTC [baseType (m,n)] 
+   nTMinMax (m,n) [] _ = applyTC transTC [baseType (m,n)] 
    nTMinMax (m,n) (Relationship _ [REnd en1 _ _,REnd en2 _ (Between min _)]:minMaxRs) rs =
      let keyType = (startsIn en1 en2 rs) ++ "Key"
      in
@@ -966,7 +980,7 @@ updateEntity (s,eName) es rs v =
   in
   cmtfunc ("Updates an existing "++eName++" entity.")
         (s,"update" ++ eName) 1 v
-        ((baseType (s,eName)) ~> transactType)
+        (emptyClassType ((baseType (s,eName)) ~> transactType))
         [simpleRule [cpvar p] (foldr (\a b -> applyF (db "|>>") [a,b]) f ts)]
 
 deleteEntity :: QName -> [Entity] -> [Entity] -> [Relationship] -> CVisibility
@@ -982,7 +996,7 @@ deleteEntity (s,eName) es esAll rsAll v =
   in
   cmtfunc ("Deletes an existing "++eName++" entity.")
         (s,"delete" ++ eName) 1 v
-        ((baseType (s,eName)) ~> transactType)
+        (emptyClassType ((baseType (s,eName)) ~> transactType))
         [simpleRule [cpvar p] (foldr (\a b -> applyF (db "|>>") [a,b]) f ts)]
 
 data TestType = New [Relationship] [String] [Relationship] [String] [Relationship] [String] [Relationship]
@@ -1334,10 +1348,11 @@ rolesR option name (Relationship _ [REnd e1 _ _, REnd e2 r2 c2]) es =
         in
         [cmtfunc rolecmt
           (name, r2) (i+1) Public 
-          ((baseType (name, e1++"Key")) 
-             ~> (foldr (\a b -> a ~> b)
-                      (baseType (db "Dynamic"))
-                      (replicate i (baseType (name, f++"Key")))))  
+          (emptyClassType
+            ((baseType (name, e1++"Key")) 
+               ~> (foldr (\a b -> a ~> b)
+                        (baseType (db "Dynamic"))
+                        (replicate i (baseType (name, f++"Key"))))))
           [simpleRule (cpvar "key" : map (cpvar . ("key"++) . show) [1..i])
               (applyF (db "|>")
                  [foldr1 (\a b -> applyF (db "<>") [a,b])
@@ -1352,12 +1367,14 @@ rolesR option name (Relationship _ [REnd e1 _ _, REnd e2 r2 c2]) es =
                               [(a,b) | a <- [1..i], b <- [a ..i], a /= b])])]]
   else if (f1 == e1)
        then [cmtfunc rolecmt (name,r2) 2 Public
-              ((baseType (name, f1 ++ "Key")) ~> (baseType (name, f2 ++ "Key"))
-                 ~> (baseType (db "Dynamic")))
+              (emptyClassType
+               ((baseType (name, f1 ++ "Key")) ~> (baseType (name, f2 ++ "Key"))
+                 ~> (baseType (db "Dynamic"))))
               [simpleRule [] (CSymbol (name, lowerFirst e2))]]
        else [cmtfunc rolecmt (name,r2) 2 Public
-              ((baseType (name, f2 ++ "Key")) ~> (baseType (name, f1 ++ "Key"))
-                 ~> (baseType (db "Dynamic")))
+              (emptyClassType
+               ((baseType (name, f2 ++ "Key")) ~> (baseType (name, f1 ++ "Key"))
+                 ~> (baseType (db "Dynamic"))))
               [simpleRule []
                      (applyF (pre "flip") [CSymbol (name, lowerFirst e2)])]]
   where
@@ -1376,8 +1393,9 @@ rolesR option name (Relationship _ [REnd e1 _ _, REnd e2 r2 c2]) es =
 -- generate code for a relationship that is implemented by a foreign key
 roles :: String -> Relationship -> [CFuncDecl]
 roles name (Relationship rname [REnd en1 role1 range1, REnd en2 role2 range2]) =
-  let rtype = entityKeyType (name,en1) ~> entityKeyType (name,en2)
-               ~> baseType (db "Dynamic")
+  let rtype = emptyClassType
+                (entityKeyType (name,en1) ~> entityKeyType (name,en2)
+                   ~> baseType (db "Dynamic"))
       len1 = lowerFirst en1
       len2 = lowerFirst en2
   in
@@ -1409,8 +1427,9 @@ roles name (Relationship rname [REnd en1 role1 range1, REnd en2 role2 range2]) =
    cmtfunc
     ("Dynamic predicate representing role \""++role2++"\".")
      (name, role1) 2 Public
-     (entityKeyType (name,en2) ~> entityKeyType (name,en1)
-        ~> (baseType (db "Dynamic")))
+     (emptyClassType
+       (entityKeyType (name,en2) ~> entityKeyType (name,en1)
+          ~> (baseType (db "Dynamic"))))
      [simpleRule [] (applyF (pre "flip") [CSymbol (name, role2)])]]
  where
   isNullRange range = case range of
@@ -1467,7 +1486,7 @@ checkAll :: String -> [Entity] -> CFuncDecl
 checkAll name es = 
   cmtfunc "Checks the consistency of the complete database."
           (name, "checkAllData") 0 Public
-          transactType
+          (emptyClassType transactType)
           [simpleRule [] (seqTrans (map (checkFunction name) es))]
 
 checkFunction :: String -> Entity -> CExpr
@@ -1478,7 +1497,7 @@ checkEntity :: String -> Entity -> CFuncDecl
 checkEntity name (Entity en _) =
   cmtfunc ("Checks the consistency of the database for "++en++" entities.")
         (name, "check"++en) 0 Public
-        transactType
+        (emptyClassType transactType)
         [simpleRule []
             (applyF (db "|>>=")
                     [applyF (db "getDB")
@@ -1501,7 +1520,7 @@ checkEntry name entity@(Entity en _) es rs =
       arginrhs = any (containsCVar argvar) t
   in
   cfunc (name, "check"++en++"Entry") 1 Private
-        ((baseType (name,en)) ~> transactType)
+        (emptyClassType ((baseType (name,en)) ~> transactType))
         [simpleRule [cpvar (if arginrhs then argvar else "_")]
                     (if null t then constF (db "returnT")
                                else seqTrans t)]
@@ -1531,7 +1550,7 @@ saveAll name entities relentities =
   cmtfunc ("Saves the complete database as Curry terms.\n"++
            "The first argument is the directory where the term files should be stored.")
    (name, "saveAllData") 0 Public
-   (stringType ~> ioType unitType)
+   (emptyClassType (stringType ~> ioType unitType))
    [simpleRule [cpvar "path"]
                (CDoExpr (map CSExpr (map saveFunction
                                          (entities ++ relentities))))]
@@ -1548,7 +1567,7 @@ restoreAll name entities relentities =
   cmtfunc ("Restore the complete database from files containing Curry terms.\n"++
      "The first argument is the directory where the term files are stored.")
     (name, "restoreAllData") 0 Public
-    (stringType ~> ioType unitType)
+    (emptyClassType (stringType ~> ioType unitType))
     [simpleRule [cpvar "path"]
                 (CDoExpr (map CSExpr (map restoreFunction entities ++
                                           map rRestoreFunction relentities)))]
@@ -1636,7 +1655,7 @@ nix = CPVar (1,"_")
 
 --- Construct type "Transaction ()"
 transactType :: CTypeExpr
-transactType = CTCons transTC [unitType]
+transactType = applyTC transTC [unitType]
 
 -- Construct the key type for an entity from a qualified entitiy name.
 entityKeyType :: QName -> CTypeExpr

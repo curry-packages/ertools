@@ -122,7 +122,7 @@ convertE idlist (XElem "UML:Entity" attrs alist) =
   let name = fromJust (lookup "name" attrs)
       attributes = map (convertAttr idlist) alist
   in
-  if alist==[]
+  if null alist
   then error ("Entity " ++ name ++ " without attributes")
   else Entity name (map (checkAttr name) attributes)
 

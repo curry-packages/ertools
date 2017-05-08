@@ -5,7 +5,7 @@
 
 module ERDGeneric where
 
-import KeyDatabaseSQLite
+import Database.KeyDatabaseSQLite
 import List
 import ReadShowTerm
 import Read
@@ -54,7 +54,8 @@ getEntry pred info2entry key = seq pred $ seq key $
 
 -- Delete a relationship represented as an entity.
 -- If the relationship does not exist, a NoRelationshipError is raised.
-deleteEntryR :: (Key -> (a,b) -> Dynamic) -> a -> b -> Transaction ()
+deleteEntryR :: (Eq a, Show a, Eq b, Show b) =>
+                (Key -> (a,b) -> Dynamic) -> a -> b -> Transaction ()
 deleteEntryR entrypred key1 key2 =
   getDB (transformQ (map fst . filter (\ (_,i) -> i==(key1,key2)))
                     (allDBKeyInfos entrypred)) |>>= \kis ->
@@ -79,7 +80,8 @@ existsEntryWithDBKey ename entrypred key =
 
 -- If a given key occurs in a (foreign key) attribute of an entity,
 -- raise a transaction error.
-requiredForeignDBKey :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
+requiredForeignDBKey :: (Eq k,Show k) =>
+                        String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
                      -> (en -> k) -> k -> Transaction ()
 requiredForeignDBKey ename entrypred info2entry keyf key =
   getDB (getAllEntities entrypred info2entry) |>>= \ens ->
@@ -98,10 +100,10 @@ duplicateKeyTest pred =
   if length (nub keys) == length keys
      then doneT
      else errorT (TError DuplicateKeyError
-                             ("database contains duplicate key for table: " 
-                                ++show pred)) 
+                         ("database contains duplicate key for table: " 
+                          {- ++show pred-})) 
      
-duplicatePTest :: [a] -> Transaction ()
+duplicatePTest :: Eq a => [a] -> Transaction ()
 duplicatePTest xs =
   if length (nub xs) == length xs
   then doneT
@@ -111,7 +113,8 @@ duplicatePTest xs =
 -- Uniqueness tests.
  
 -- Test whether an attribute value does not yet exist
-unique :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en) -> (en -> a) -> a
+unique :: (Eq a,Show a) =>
+          String -> (Key -> t -> Dynamic) -> (Key -> t -> en) -> (en -> a) -> a
        -> Transaction ()
 unique ename entrypred info2entry selector attrval =
   getDB (allDBKeyInfos entrypred) |>>= \kis ->
@@ -122,7 +125,8 @@ unique ename entrypred info2entry selector attrval =
                        (ename++" entry for unique attribute "
                         ++show attrval++" already exists"))
 
-uniqueUpdate :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
+uniqueUpdate :: (Eq a,Show a) =>
+                String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
              -> (en -> Key) -> (en -> a) -> en -> Transaction ()
 uniqueUpdate ename entrypred info2entry keyf selector obj =
   let oldkey = keyf obj
@@ -141,7 +145,7 @@ uniqueUpdate ename entrypred info2entry keyf selector obj =
                                    (ename++" entry for unique attribute "
                                     ++show (selector obj)++" already exists")))
 
-uniqueC :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
+uniqueC :: (Eq a,Show a) => String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
         -> (en -> a) -> en -> Transaction ()
 uniqueC ename entrypred info2entry selector obj =
   getDB (allDBKeyInfos entrypred) |>>= \kis ->
@@ -156,14 +160,15 @@ uniqueC ename entrypred info2entry selector obj =
 -- Uniqueness of a combination of two attributes.
 -- Check whether this combination already exists.
 -- If it exists, a transaction error is generated, otherwise everything is ok.
-unique2 :: (Key -> (a,b) -> Dynamic) -> a -> b -> Transaction ()
+unique2 ::  (Eq a,Eq b) => (Key -> (a,b) -> Dynamic) -> a -> b -> Transaction ()
 unique2 entrypred k1 k2 =
   getDB (allDBInfos entrypred) |>>= \is ->
   if null (filter (== (k1,k2)) is)
    then doneT
    else errorT (TError UniqueError "relationship already exists")
 
-unique2C :: (Key -> (a,b) -> Dynamic) ->  a -> b -> Transaction ()
+unique2C :: (Eq a,Eq b) => (Key -> (a,b) -> Dynamic) ->  a -> b
+         -> Transaction ()
 unique2C entrypred k1 k2 =
   getDB (allDBInfos entrypred) |>>= \is ->
   if length (filter (== (k1,k2)) is) > 1
@@ -180,7 +185,7 @@ maxPTest max xs =
   else doneT
 
 
-maxTest :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
+maxTest :: (Eq a,Show a) => String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
         -> (en -> a) -> Int -> a -> Transaction ()
 maxTest ename entrypred info2entry selector max attr =
   getDB (getAllEntities entrypred info2entry) |>>= \es ->
@@ -190,7 +195,8 @@ maxTest ename entrypred info2entry selector max attr =
    else errorT (TError MaxError ("max reached for attribute " 
                                  ++show attr++" in entity "++ename))
 
-maxTestUpdate :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
+maxTestUpdate :: (Eq a, Show a) =>
+                 String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
               -> (en -> Key) -> (en -> a) -> Int -> en -> Transaction ()
 maxTestUpdate ename entrypred info2entry keyf selector max obj =
   getDB (getAllEntities entrypred info2entry) |>>= \es ->
@@ -202,7 +208,7 @@ maxTestUpdate ename entrypred info2entry keyf selector max obj =
    else errorT (TError MaxError ("max reached for attribute "
                                  ++show (selector obj)++" in entity "++ename))
 
-maxTestC :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
+maxTestC :: (Eq a,Show a) => String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
          -> (en -> a) -> Int -> a -> Transaction ()
 maxTestC ename entrypred info2entry selector max attr =
   getDB (getAllEntities entrypred info2entry) |>>= \es ->
@@ -211,7 +217,7 @@ maxTestC ename entrypred info2entry selector max attr =
    else errorT (TError MaxError ("maximum exceeded for attribute " 
                                  ++show attr++" in entity "++ename))
 
-minTestC :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
+minTestC :: (Eq a,Show a) => String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
          -> (en -> a) -> Int -> a -> Transaction ()
 minTestC ename entrypred info2entry selector min attr =
   getDB (getAllEntities entrypred info2entry) |>>= \es ->
@@ -221,7 +227,8 @@ minTestC ename entrypred info2entry selector min attr =
                                    ++show attr++" in entity "++ename))
 
 -- Maximum test before inserting a relationship with a given key:
-maxTestInsert :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
+maxTestInsert :: (Eq a,Show a) =>
+                 String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
               -> (en -> a) -> Int -> a -> Transaction ()
 maxTestInsert ename entrypred info2entry selector maxrange attr =
   getDB (getAllEntities entrypred info2entry) |>>= \es ->
@@ -231,7 +238,8 @@ maxTestInsert ename entrypred info2entry selector maxrange attr =
                                  ++show attr++" in entity "++ename))
 
 -- Minimum test before deleting a relationship
-minTestDelete :: String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
+minTestDelete :: (Eq a,Show a) =>
+                 String -> (Key -> t -> Dynamic) -> (Key -> t -> en)
               -> (en -> a) -> Int -> a -> Transaction ()
 minTestDelete ename entrypred info2entry selector min attr =
   getDB (getAllEntities entrypred info2entry) |>>= \es ->
