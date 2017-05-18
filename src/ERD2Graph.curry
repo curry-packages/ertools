@@ -13,6 +13,8 @@ import List(intersperse)
 import Database.ERD
 import Distribution(getRcVar)
 
+import ShowDotGraph
+
 -- Should a relation represented as an explicit node?
 -- If not, it will be represented as an arc with a label.
 -- However, some graph drawing tools have problems to write the
@@ -20,11 +22,11 @@ import Distribution(getRcVar)
 relationAsNode :: Bool
 relationAsNode = True
 
--- Visualize an ERD term with dot.
+-- Visualize an ERD term as aDot graph.
 viewERD :: ERD -> IO ()
-viewERD = viewDot . showDotGraph . erd2dot
+viewERD = viewDotGraph . erd2dot
 
--- translate dependencies into DOT language:
+-- Translate dependencies into Dot graph:
 erd2dot :: ERD -> DotGraph
 erd2dot (ERD erdname ens rels) =
   Graph erdname (enodes++concat rnodes) (concat redges)
@@ -67,47 +69,3 @@ erd2dot (ERD erdname ens rels) =
   showCard (Between n Infinite) = '(' : show n ++ ",n)"
   showCard (Between n (Max m)) = '(' : show n ++ "," ++ show m ++ ")"
 
-data DotGraph = Graph String [Node] [Edge]
-data Node = Node String [(String,String)]
-data Edge = Edge String String [(String,String)]
-
-showDotGraph :: DotGraph -> String
-showDotGraph (Graph name nodes edges) =
-  "digraph "++name++"{\n" ++
-  concatMap node2dot nodes ++ concatMap edge2dot edges ++ "}\n"
- where
-  node2dot (Node nname attrs) =
-    if null attrs
-    then showDotID nname ++ ";\n"
-    else showDotID nname ++
-            '[':concat (intersperse ","
-                           (map (\ (n,v)->n++"=\""++v++"\"") attrs)) ++ "]"
-                        ++ ";\n"
-
-  edge2dot (Edge i j attrs) =
-    showDotID i ++ " -> " ++ showDotID j ++
-    (if null attrs then "" else
-       '[':concat (intersperse ","
-                     (map (\ (n,v)->n++"=\""++v++"\"") attrs)) ++ "]")
-    ++ ";\n"
-
-  showDotID s | all isAlphaNum s = s
-              | otherwise = '"' : concatMap escapeDQ s ++ "\""
-   where escapeDQ c = if c=='"' then "\\\"" else [c]
-
--- visualize a DOT string:
-viewDot :: String -> IO ()
-viewDot dottxt = do
-    dotcmd <- getDotViewCmd
-    dotstr <- connectToCommand dotcmd
-    hPutStr dotstr dottxt
-    hClose dotstr
-
--- Read dot view command from rc file of the Curry system:
-getDotViewCmd :: IO String
-getDotViewCmd = getRcVar "dotviewcommand" >>= return . maybe "" id
-
---dotCmd = "dot -Tps | kghostview -"
---dotCmd = "neato -Tps | kghostview -"
---dotCmd = "circo -Tps | kghostview -"
---dotCmd = "fdp -Tps | kghostview -"

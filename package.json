@@ -5,6 +5,7 @@
     "synopsis": "Tools for dealing with database applications specified by entity-relationship diagrams",
     "category": [ "Database" ],
     "dependencies": {
+        "graphviz": ">= 1.0.0"
     },
     "compilerCompatibility": {
         "pakcs": ">= 2.0.0",
