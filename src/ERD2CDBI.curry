@@ -19,7 +19,6 @@ import AbstractCurry.Build
 
 import Char           ( toLower, toUpper )
 import Database.ERD
-import Database.ERDGoodies
 import Directory      ( doesFileExist, getAbsolutePath )
 import Distribution   ( installDir )
 import qualified FilePath as FP ( (</>), combine, splitFileName)
@@ -31,6 +30,8 @@ import ReadShowTerm   ( readsQTerm )
 import SetFunctions   ( selectValue, set2 )
 import System
 import Time
+
+import Database.ERD.Goodies
 
 -- Write all the data so CDBI can be used, create a database (if it does
 -- not exist) and a .info file/

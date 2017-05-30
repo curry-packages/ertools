@@ -11,6 +11,7 @@
         "pakcs": ">= 2.0.0",
         "kics2": ">= 2.0.0"
     },
+    "exportedModules": [ "Database.ERD.Goodies" ],
     "configModule": "ERToolsPackageConfig",
     "executable": {
         "name": "erd2curry",

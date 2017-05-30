@@ -14,11 +14,12 @@ module CodeGeneration(Option,Storage(..),ConsistencyTest(..),
 import AbstractCurry.Types
 import AbstractCurry.Build
 import Database.ERD
-import Database.ERDGoodies
 import List
 import Char
 import FiniteMap
 import Maybe
+
+import Database.ERD.Goodies
 
 type Option          = (Storage, ConsistencyTest)
 
