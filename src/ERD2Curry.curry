@@ -5,7 +5,6 @@ import AbstractCurry.Files  (readCurry)
 import AbstractCurry.Select (imports)
 import AbstractCurry.Pretty
 import Database.ERD
-import Database.ERDGoodies
 import Directory
 import Distribution         (curryCompiler, installDir)
 import FilePath             ((</>))
@@ -14,6 +13,7 @@ import System               (exitWith, getArgs, system)
 import Time
 import XML
 
+import Database.ERD.Goodies
 import CodeGeneration
 import ERD2CDBI (writeCDBI)
 import ERD2Graph
