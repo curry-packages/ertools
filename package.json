@@ -7,7 +7,8 @@
     "dependencies": {
         "abstract-curry": ">= 2.0.0",
         "flatcurry"     : ">= 2.0.0",
-        "graphviz"      : ">= 2.0.0"
+        "graphviz"      : ">= 2.0.0",
+        "xml"           : ">= 2.0.0"
     },
     "compilerCompatibility": {
         "pakcs": ">= 2.0.0",
