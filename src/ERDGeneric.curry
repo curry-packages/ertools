@@ -5,11 +5,12 @@
 
 module ERDGeneric where
 
-import Database.KeyDatabaseSQLite
-import List
-import ReadShowTerm
-import Read
 import Char(isDigit)
+import List
+import Read
+import ReadShowTerm
+
+import Database.KeyDatabaseSQLite
 
 ------------------------------------------------------------------------------
 -- Handling of database keys
