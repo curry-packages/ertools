@@ -1,4 +1,4 @@
-import Database.ERD
+import Database.ERD -- from package cdbi
 
 blogERD :: ERD
 blogERD =

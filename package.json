@@ -6,8 +6,10 @@
     "category": [ "Database" ],
     "dependencies": {
         "abstract-curry" : ">= 1.0.0",
+        "cdbi"           : ">= 1.0.0",
         "flatcurry"      : ">= 1.0.0",
         "graphviz"       : ">= 1.0.0",
+        "keydb"          : ">= 1.0.0",
         "xml"            : ">= 0.0.1"
     },
     "compilerCompatibility": {
