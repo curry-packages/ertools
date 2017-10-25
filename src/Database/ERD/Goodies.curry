@@ -153,7 +153,8 @@ storeERDFromProgram progfile = do
   case erdfuncs of
     [] -> error $ "No definition of ER model found in program " ++ progfile
     [fd] -> do let cmd = installDir++"/bin/curry"
-                   args = [":set","v0",":load",progname
+                   args = ["--nocypm"
+                          ,":set","v0",":load",progname
                           ,":add","Database.ERD"
                           ,":eval"
                           ,"Database.ERD.writeERDTermFile " ++
