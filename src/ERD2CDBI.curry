@@ -25,13 +25,13 @@ import qualified FilePath as FP ( (</>), combine, splitFileName)
 import IO
 import IOExts         ( connectToCommand )
 import List
-import Pretty
 import ReadShowTerm   ( readsQTerm )
 import SetFunctions   ( selectValue, set2 )
 import System
 import Time
 
 import Database.ERD.Goodies
+import Text.Pretty
 
 -- Write all the data so CDBI can be used, create a database (if it does
 -- not exist) and a .info file/
