@@ -1,4 +1,4 @@
---- ----------------------------------------------------------------------------
+------------------------------------------------------------------------------
 --- This module creates all datatypes to represent the entities and
 --- relations of a relational (SQLite) database corresponding to a
 --- logical ER model specified in a file `x_ERDT.term` (which is
@@ -8,8 +8,9 @@
 --- translated by the Curry preprocessor `currypp`.
 ---
 --- @author Mike Tallarek, extensions by Julia Krone and Michael Hanus
---- @version 0.2
---- ----------------------------------------------------------------------------
+------------------------------------------------------------------------------
+--- TODO: generate code to check ER constraints in new/update/delete
+---       operations for entities (similarly to old erd2curry compiler)
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
@@ -18,7 +19,6 @@ import AbstractCurry.Pretty
 import AbstractCurry.Build
 
 import Char           ( toLower, toUpper )
-import Database.ERD
 import Directory      ( doesFileExist, getAbsolutePath )
 import Distribution   ( installDir )
 import qualified FilePath as FP ( (</>), combine, splitFileName)
@@ -30,33 +30,38 @@ import SetFunctions   ( selectValue, set2 )
 import System
 import Time
 
+import Database.ERD
 import Database.ERD.Goodies
 import Text.Pretty
 
 -- Write all the data so CDBI can be used, create a database (if it does
--- not exist) and a .info file/
+-- not exist) and a .info file.
 -- The parameters are the name of the file containing the ERD term,
 -- the ER model, and the name of the SQLite3 database.
 writeCDBI :: String -> ERD -> String -> IO ()
 writeCDBI erdfname (ERD name ents rels) dbname = do
   dbPath <- getAbsolutePath dbname
-  let cdbiMod  = name++"_CDBI"
-      cdbiFile = cdbiMod++".curry"
-      imports = [ "Time"
-                , "Database.CDBI.ER"
-                , "Database.CDBI.Criteria"
-                , "Database.CDBI.Connection"
-                , "Database.CDBI.Description"]
-      typeDecls = foldr ((++) . (getEntityTypeDecls cdbiMod)) [] ents 
-      funcDecls = genDBPathFunc cdbiMod dbPath :
-                  foldr ((++) . (getEntityFuncDecls cdbiMod)) [] ents
-  writeFile cdbiFile $
-    "--- This file has been generated from `"++erdfname++"`\n"++
-    "--- and contains definitions for all entities and relations\n"++
-    "--- specified in this model.\n\n"++
-    pPrint
-     (ppCurryProg defaultOptions
-      (CurryProg (name++"_CDBI") imports Nothing [] [] typeDecls funcDecls []))
+  let cdbimod  = name
+      cdbiFile = cdbimod++".curry"
+      imports  = [ "Time"
+                 , "Database.CDBI.ER"
+                 , "Database.CDBI.Criteria"
+                 , "Database.CDBI.Connection"
+                 , "Database.CDBI.Description"]
+      typeDecls  = foldr ((++) . (genEntityTypeDecls cdbimod)) [] ents 
+      funcDecls  = genDBPathFunc cdbimod dbPath :
+                   foldr ((++) . (genEntityFuncDecls cdbimod)) [] ents ++
+                   genSaveDB cdbimod ents ++
+                   genRunFuncs cdbimod
+  writeFile cdbiFile $ unlines
+    [ "--- This file has been generated from `"++erdfname++"`"
+    , "--- and contains definitions for all entities and relations"
+    , "--- specified in this model.\n"
+    , pPrint
+       (ppCurryProg defaultOptions
+         (CurryProg cdbimod imports Nothing [] [] typeDecls funcDecls []))
+    ]
+  putStrLn $ "Database operations generated into file '" ++ cdbiFile ++ "'"
   infofilehandle <- openFile (name++"_SQLCode.info") WriteMode
   writeParserFile infofilehandle name ents rels dbPath
   hClose infofilehandle
@@ -89,6 +94,9 @@ mDescription = "Database.CDBI.Description"
 
 mConnection :: String
 mConnection = "Database.CDBI.Connection"
+
+mER :: String
+mER = "Database.CDBI.ER"
 
 --generates an AbstractCurry expression representing the parser information
 -- and writes it to the file
@@ -258,8 +266,8 @@ getAttrList (Entity name attrs) =
 -- ------- writing file containing all type needed for use of CDBI ------------
 
 -- Generates the declaration of datatype and ID-type for each entity.   
-getEntityTypeDecls :: String -> Entity -> [CTypeDecl] 
-getEntityTypeDecls mName ent =                        
+genEntityTypeDecls :: String -> Entity -> [CTypeDecl] 
+genEntityTypeDecls mName ent =                        
    [(writeDatatype mName ent), (writeID mName ent)]
                            
 -- Generates a entity-datatype based on an entity.
@@ -268,30 +276,31 @@ writeDatatype mName (Entity name attrs)  =
  CType (mName, name) Public []
        [(simpleCCons (mName, name) Public
                      (map (writeAttributes mName name) attrs))]
-       [pre "Eq", pre "Show"]
+       [pre "Eq", pre "Show", pre "Read"]
                     
 -- Generates a ID-datatype based on an entity.
 writeID :: String -> Entity -> CTypeDecl
 writeID mName (Entity name _) = 
  CType (mName, (name++"ID")) Public []
        [(simpleCCons (mName, (name ++"ID")) Public [intType])]
-       [pre "Eq", pre "Show"]
+       [pre "Eq", pre "Show", pre "Read"]
 
 -- Generates all function declarations for an entity.                                               
-getEntityFuncDecls :: String -> Entity -> [CFuncDecl]
-getEntityFuncDecls mName ent = 
-      [(writeDescription mName ent), 
-       (writeTables mName ent)]++
-      (writeColumns mName ent)++
-      (writeColumnDescriptions mName ent)++
-      (writeGetterSetters mName ent)++
-      (writeKeyToValueFunc mName ent)
+genEntityFuncDecls :: String -> Entity -> [CFuncDecl]
+genEntityFuncDecls mName ent = 
+      [writeDescription mName ent, 
+       writeTables mName ent] ++
+      writeColumns mName ent ++
+      writeColumnDescriptions mName ent ++
+      writeGetterSetters mName ent ++
+      writeKeyTransformFuncs mName ent ++
+      writeEntryFuncs mName ent
 
 -- Generates an entity-description based on an entity.
 writeDescription :: String -> Entity -> CFuncDecl
 writeDescription mName (Entity name attrs) = 
   stCmtFunc ("The ER description of the `" ++ name ++ "` entity.")
-        (mName, (firstLow name ++ "_CDBI_Description" ))
+        (mName, firstLow name ++ "_CDBI_Description" )
         0
         Public
         (applyTC (mDescription, "EntityDescription") [baseType (mName, name)])
@@ -362,13 +371,13 @@ getAttributeType mName eName (Attribute atr dom _ _) =
 
 -- Get the type of a domain as CExpr.
 getType :: String -> Domain -> CTypeExpr
-getType _ (IntDom _) = intType
-getType _ (FloatDom _) = floatType
-getType _ (CharDom _) = (baseType (pre "Char"))
-getType _ (StringDom _) = stringType
-getType _ (BoolDom _) = boolType
-getType _ (DateDom _) = (baseType ("Time", "ClockTime"))
-getType mName (KeyDom name) = (baseType (mName ,(name++"ID")))
+getType _ (IntDom _)        = intType
+getType _ (FloatDom _)      = floatType
+getType _ (CharDom _)       = baseType (pre "Char")
+getType _ (StringDom _)     = stringType
+getType _ (BoolDom _)       = boolType
+getType _ (DateDom _)       = baseType ("Time", "ClockTime")
+getType mName (KeyDom name) = baseType (mName, name++"ID")
 
 -- Generates all getter and setter methods based on an entity.
 writeGetterSetters :: String -> Entity -> [CFuncDecl]
@@ -420,9 +429,9 @@ createParametersLeft :: Int -> Int -> [CPattern]
 createParametersLeft ind len = case ind of
   0 -> case len of
          0 -> []
-         n -> (cpvar ("b" ++ (show n))):(createParametersLeft 0 $ n-1)
+         n -> (cpvar ("b" ++ show n)):(createParametersLeft 0 $ n-1)
   1 -> (cpvar "_"): (createParametersLeft 0 len)
-  n -> (cpvar ("a" ++ (show n))) : (createParametersLeft (n-1) len)
+  n -> (cpvar ("a" ++ show n)) : (createParametersLeft (n-1) len)
 
 -- Auxiliary function for writeGetterSetter that creates the needed amount
 -- of parameters for setter-functions on the right side
@@ -430,8 +439,8 @@ createParametersRight :: Int -> Int -> [CExpr]
 createParametersRight ind len = case ind of
   0 -> case len of
          0 -> []
-         n -> (cvar ("b" ++ (show n))) : (createParametersRight 0 $ n-1)
-  1 -> (cvar ("a")) : (createParametersRight 0 len)
+         n -> (cvar ("b" ++ show n)) : (createParametersRight 0 $ n-1)
+  1 -> (cvar "a") : (createParametersRight 0 len)
   n -> (cvar ("a" ++ (show n))) : (createParametersRight (n-1) len)
 
 -- Generates the first conversion function in the entity-description
@@ -598,23 +607,227 @@ writeTypes (Attribute _ (BoolDom _) _ _) = CSymbol (mConnection, "SQLTypeBool")
 writeTypes (Attribute _ (DateDom _) _ _) = CSymbol (mConnection, "SQLTypeDate")
 writeTypes (Attribute _ (KeyDom _) _ _) = CSymbol (mConnection, "SQLTypeInt")
 
--- Generates id-to-Value function based on an entity.
-writeKeyToValueFunc :: String -> Entity -> [CFuncDecl]
-writeKeyToValueFunc mName (Entity name attrs) =
-  case (head attrs) of
+-- Generates operations to transform entity keys, like
+-- id-to-value, id-to-int, show/read functions.
+writeKeyTransformFuncs :: String -> Entity -> [CFuncDecl]
+writeKeyTransformFuncs mName (Entity name attrs) =
+  case head attrs of
      (Attribute "Key" _ PKey _ ) -> 
-           [stCmtFunc ("id-to-value function for entity " ++ name)
-                  (mName , ((firstLow name) ++ "ID"))
-                  1
-                  Public
-                  ((baseType (mName, ((name ++"ID")))) ~> 
-                       (applyTC ("Database.CDBI.Criteria", "Value") 
-                                [(baseType (mName, (name++"ID")))]))
-                  [(simpleRule [(writeAttrLeftOneTwo mName name (head attrs))]
-                               (applyF ("Database.CDBI.Criteria", "idVal") 
-                                       [(cvar "key")]))]]
+        [ stCmtFunc ("id-to-value function for entity " ++ name)
+            (mName, firstLow name ++ "ID") 1 Public
+            (baseType (mName, name ++ "ID") ~> 
+             applyTC ("Database.CDBI.Criteria", "Value") 
+                     [baseType (mName, name ++ "ID")])
+            [simpleRule [writeAttrLeftOneTwo mName name (head attrs)]
+                        (applyF ("Database.CDBI.Criteria", "idVal") 
+                                [cvar "key"])]
+        , stCmtFunc ("id-to-int function for entity " ++ name)
+            (mName, toKeyToInt $ firstLow name) 1 Public
+            (baseType (mName, name ++"ID") ~> intType)
+            [simpleRule [writeAttrLeftOneTwo mName name (head attrs)]
+                        (cvar "key")]
+        , stCmtFunc ("Shows the key of a " ++ name ++ " entity as a string.")
+            (mName, "show" ++ name ++ "Key") 1 Public
+            (baseType (mName, name) ~> stringType)
+            [simpleRule [cpvar "entry"]
+              (applyF (mER, "showDatabaseKey")
+                [ string2ac name
+                , constF (mName, toKeyToInt $ firstLow name)
+                , applyF (mName, firstLow name ++ "Key") [cvar "entry"]
+                ])]
+        , stCmtFunc
+            ("Transforms a string into a key of a " ++ name ++ " entity.\n" ++
+             "Nothing is returned if the string does not represent a " ++
+             "meaningful key.")
+            (mName, "read" ++ name ++ "Key") 0 Public
+            (stringType ~> maybeType (baseType (mName, name ++ "ID")))
+            [simpleRule []
+              (applyF (mER, "readDatabaseKey")
+                [ string2ac name, constF (mName, name ++ "ID")])]
+        ]
      _  -> []
+ where
+  toKeyToInt s = s ++ "KeyToInt"
 
+-- Generates operations to access and manipulate entries of entities
+-- (as used by the Spicey web framework)
+writeEntryFuncs :: String -> Entity -> [CFuncDecl]
+writeEntryFuncs mName (Entity name attrs) =
+  case head attrs of
+     (Attribute "Key" _ PKey _ ) -> 
+        [ stCmtFunc ("Gets all " ++ name ++ " entities.")
+            (mName, "queryAll" ++ name ++ "s") 0 Public
+            (applyTC (mConnection, "DBAction")
+                     [listType (baseType (mName, name))])
+            [simpleRule []
+               (applyF (mER, "getAllEntries") [constF endescr])]
+        , stCmtFunc
+            ("Gets all " ++ name ++ " entities satisfying a given predicate.")
+            (mName, "queryCond" ++ name) 0 Public
+            ((baseType (mName, name) ~> boolType) ~>
+             applyTC (mConnection, "DBAction")
+                     [listType (baseType (mName, name))])
+            [simpleRule []
+               (applyF (mER, "getCondEntries") [constF endescr])]
+        , stCmtFunc ("Gets a " ++ name ++ " entry by a given key.")
+            (mName, "get" ++ name) 0 Public
+            (baseType (mName, name ++ "ID") ~> 
+             applyTC (mConnection, "DBAction") [baseType (mName, name)])
+            [simpleRule []
+               (applyF (mER, "getEntryWithKey") 
+                  [ constF endescr
+                  , constF (mName, lname ++ "ColumnKey")
+                  , constF (mName, lname ++ "ID")])]
+        , let numargs = length attrs - 1
+              args    = map ((++"_p") . firstLow . attributeName) (tail attrs)
+          in stCmtFunc ("Inserts a new " ++ name ++ " entity.")
+            (mName, "new" ++ name ++ attrs2WithKeys) numargs Public
+            (foldr (~>)
+                   (applyTC (mConnection, "DBAction") [baseType (mName, name)])
+                   (map (getAttributeType mName name) (tail attrs)))
+            [simpleRule (map cpvar args)
+               (applyF (mER, "insertNewEntry") 
+                  [ constF endescr
+                  , constF (mName, "set" ++ name ++ "Key")
+                  , constF (mName, name ++ "ID")
+                  , applyF (mName, name)
+                     (applyF (mName, name ++ "ID") [cInt 0]
+                      : map cvar args)
+                  ])]
+        , stCmtFunc ("Deletes an existing " ++ name ++ " entry by its key.")
+            (mName, "delete" ++ name) 0 Public
+            (baseType (mName, name) ~> 
+             applyTC (mConnection, "DBAction") [unitType])
+            [simpleRule []
+               (applyF (mER, "deleteEntry") 
+                  [ constF endescr
+                  , constF (mName, lname ++ "ColumnKey")
+                  , applyF (pre ".")
+                      [constF (mName, lname ++ "ID"),
+                       constF (mName, lname ++ "Key")]])]
+        , stCmtFunc ("Updates an existing " ++ name ++ " entry by its key.")
+            (mName, "update" ++ name) 0 Public
+            (baseType (mName, name) ~> 
+             applyTC (mConnection, "DBAction") [unitType])
+            [simpleRule []
+               (applyE (applyF (pre "flip") [constF (mER, "updateEntry")])
+                       [constF endescr ])]
+        ]
+     _  ->
+      let numargs = length attrs
+          args    = map (\i -> 'k' : show i) [1 .. numargs]
+      in [ stCmtFunc ("Inserts a new " ++ name ++ " relation.")
+            (mName, "new" ++ name) numargs Public
+            (foldr (~>)
+                   (applyTC (mConnection, "DBAction") [unitType])
+                   (map (getAttributeType mName name) attrs))
+            [simpleRule (map cpvar args)
+               (applyF (mER, "insertEntry") 
+                  [ applyF (mName, name) (map cvar args)
+                  , constF endescr
+                  ])]
+         , stCmtFunc ("Deletes an existing " ++ name ++ " relation.")
+            (mName, "delete" ++ name) numargs Public
+            (foldr (~>)
+                   (applyTC (mConnection, "DBAction") [unitType])
+                   (map (getAttributeType mName name) attrs))
+            [simpleRule (map cpvar args)
+               (applyF (mER, "deleteEntryR") 
+                  (constF endescr : concatMap attr2args (zip attrs args)))]
+         , case attrs of
+             [Attribute aname1 (KeyDom adom1) _ _,
+              Attribute aname2 (KeyDom adom2) _ _] ->
+              stCmtFunc ("Gets the associated " ++ adom1 ++
+                         " entities for a given " ++ adom2 ++ " entity.")
+               (mName, "get" ++ adom1 ++ adom2 ++ "s") 1 Public
+               (baseType (mName,adom1) ~>
+                applyTC (mConnection, "DBAction")
+                        [listType (baseType (mName,adom2))])
+               [simpleRule [cpvar "en"]
+                 (applyF (mER,">+=")
+                   [ applyF (mER, "getEntriesWithColVal") 
+                       [ constF endescr
+                       , constF (mName, lname ++ "Column" ++ aname1)
+                       , applyF (mName, firstLow adom1 ++ "ID")
+                           [applyF (mName, firstLow adom1 ++ "Key") [cvar "en"]]
+                       ]
+                   , CLambda [cpvar "vals"]
+                       (applyF (mConnection, "mapDBAction")
+                         [ constF (mName, "get" ++ adom2)
+                         , applyF (pre "map")
+                                  [ constF (mName, lname ++ aname2)
+                                  , cvar "vals"]])
+                   ])]
+             _ -> error  $ "Non-binary relation entity " ++ name
+      ]
+ where
+  lname   = firstLow name
+  endescr = (mName, lname ++ "_CDBI_Description")
+  
+  attr2args (Attribute aname adom _ _, arg) =
+    [ constF (mName, lname ++ "Column" ++ aname)
+    , case adom of
+        KeyDom en -> applyF (mName, firstLow en ++ "ID") [cvar arg]
+        _ -> error $ "No KeyDom attribute in relation entity " ++ name
+    ]
+
+  attrs2WithKeys = concatMap (("With"++) . attributeName)
+                             (filter isForeignKey attrs)
+
+-- Generates runQ/runT operations (used by the Spicey web framework)
+genSaveDB :: String -> [Entity] -> [CFuncDecl]
+genSaveDB mname ents =
+  [ stCmtFunc
+      ("Saves complete database as term files into an existing directory\n" ++
+       "provided as a parameter.")
+      (mname,"saveDBTo") 1 Public
+      (stringType ~> ioType unitType)
+      [simpleRule [cpvar "dir"] (CDoExpr (map saveDBTerms ents))]
+  , stCmtFunc
+      ("Restores complete database from term files which are stored\n" ++
+       "in a directory provided as a parameter.")
+      (mname,"restoreDBFrom") 1 Public
+      (stringType ~> ioType unitType)
+      [simpleRule [cpvar "dir"] (CDoExpr (map restoreDBTerms ents))]
+  ]
+ where
+  saveDBTerms (Entity name _) = CSExpr $
+    applyF (mER,"saveDBTerms")
+           [ constF (mname, firstLow name ++ "_CDBI_Description")
+           , constF (mname,"sqliteDBFile")
+           , cvar "dir"]
+
+  restoreDBTerms (Entity name _) = CSExpr $
+    applyF (mER,"restoreDBTerms")
+           [ constF (mname, firstLow name ++ "_CDBI_Description")
+           , constF (mname,"sqliteDBFile")
+           , cvar "dir"]
+
+-- Generates runQ/runT operations (used by the Spicey web framework)
+genRunFuncs :: String -> [CFuncDecl]
+genRunFuncs mname =
+  [ stCmtFunc "Runs a DB action (typically a query)."
+      (mname,"runQ") 0 Public
+      (applyTC (mConnection, "DBAction") [ctvar "a"] ~> ioType (ctvar "a"))
+      [simpleRule []
+         (applyF (mER, "runQueryOnDB") [constF (mname,"sqliteDBFile")])]
+  , stCmtFunc "Runs a DB action as a transaction."
+      (mname,"runT") 0 Public
+      (applyTC (mConnection, "DBAction") [ctvar "a"] ~>
+       ioType (applyTC (mConnection,"SQLResult") [ctvar "a"]))
+      [simpleRule []
+         (applyF (mER, "runTransactionOnDB") [constF (mname,"sqliteDBFile")])]
+  , stCmtFunc
+      "Runs a DB action as a transaction. Emits an error in case of failure."
+      (mname,"runJustT") 0 Public
+      (applyTC (mConnection, "DBAction") [ctvar "a"] ~> ioType (ctvar "a"))
+      [simpleRule []
+         (applyF (mER, "runJustTransactionOnDB")
+                 [constF (mname,"sqliteDBFile")])]
+  ]
+
+
+----------------------------------------------------------------------------
 -- Creates a sqlite3-database (sqlite3 needs to be installed)
 createDatabase :: [Entity] -> Handle -> IO ()
 createDatabase ents db = mapIO_ (\ent -> (createDatabase' ent)) ents

@@ -1,4 +1,4 @@
-module ERD2Curry( main, erd2curryWithDBandERD )
+module ERD2Curry( main, erd2curryWithDBandERD, erd2cdbiWithDBandERD )
   where
 
 import AbstractCurry.Files  (readCurry)
@@ -24,7 +24,7 @@ import XML2ERD
 systemBanner :: String
 systemBanner =
   let bannerText = "ERD->Curry Compiler (Version " ++ packageVersion ++
-                   " of 09/03/17)"
+                   " of 04/01/18)"
       bannerLine = take (length bannerText) (repeat '-')
    in bannerLine ++ "\n" ++ bannerText ++ "\n" ++ bannerLine
 
@@ -111,6 +111,16 @@ erd2curryWithDBandERD dbname erfile =
   startERD2Curry
     (Just defaultEROptions
              { optStorage = SQLite dbname, optERProg = erfile })
+
+--- Runs ERD2CDBI with a given database, a Curry program file
+--- containing ERD definition, and a target module name.
+erd2cdbiWithDBandERD :: String -> String -> IO ()
+erd2cdbiWithDBandERD dbname erprog =
+  startERD2Curry
+    (Just defaultEROptions
+            { optStorage = SQLite dbname
+            , optCDBI    = True
+            , optERProg  = erprog })
 
 startERD2Curry :: Maybe EROptions -> IO ()
 startERD2Curry Nothing = do
