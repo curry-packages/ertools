@@ -575,14 +575,12 @@ writeAttrRightThree mName _ (Attribute (a:b) (KeyDom c) PKey _) =
 writeAttrRightThree mName name (Attribute (a:b) (IntDom _) PKey _) =
   applyE (CSymbol (mName, (name++"ID"))) [(cvar ((toLower a):b))]  
 
--- Translates an attribute into the corresponding type of entity-datatype.
+-- Translates an attribute into the corresponding type of entity datatype.
 attr2CType :: String -> String -> Attribute -> CTypeExpr
 attr2CType mName name (Attribute a adom _ anull) = case adom of
-  IntDom _ -> if anull
-                then maybeType intType
-                else case a of
-                       "Key" -> baseType (mName , (name++"ID"))
-                       _     -> intType
+  IntDom _    -> case a of
+                   "Key" -> baseType (mName , (name++"ID"))
+                   _     -> addMaybeIfNull anull intType
   FloatDom  _ -> addMaybeIfNull anull floatType
   CharDom   _ -> addMaybeIfNull anull (baseType (pre "Char"))
   StringDom _ -> stringType
@@ -592,7 +590,26 @@ attr2CType mName name (Attribute a adom _ anull) = case adom of
  where
   addMaybeIfNull isnull texp = if isnull then maybeType texp else texp
 
--- Translates an attribute type into a symbol used in an entity-description.
+-- Translates an attribute into the corresponding type of the "new"
+-- operation for entities. Thus, if attributes have default values,
+-- they are translated into `Maybe` types.
+attr2NewCType :: String -> String -> Attribute -> CTypeExpr
+attr2NewCType mName name (Attribute a adom _ anull) = case adom of
+  IntDom    d  -> case a of
+                   "Key" -> baseType (mName , (name++"ID"))
+                   _     -> addMaybeIfNullOrDflt anull d intType
+  FloatDom  d -> addMaybeIfNullOrDflt anull d floatType
+  CharDom   d -> addMaybeIfNullOrDflt anull d (baseType (pre "Char"))
+  StringDom _ -> stringType
+  BoolDom   d -> addMaybeIfNullOrDflt anull d boolType
+  DateDom   d -> addMaybeIfNullOrDflt anull d (baseType ("Time", "ClockTime"))
+  KeyDom    k -> addMaybeIfNullOrDflt anull Nothing (baseType (mName, k++"ID"))
+ where
+  addMaybeIfNullOrDflt _      (Just _) texp = maybeType texp
+  addMaybeIfNullOrDflt isnull Nothing  texp =
+    if isnull then maybeType texp else texp
+
+-- Translates an attribute type into a symbol used in an entity description.
 attr2CSymbol :: Attribute -> CExpr
 attr2CSymbol (Attribute _ adom _ _) = domain2CSymbol adom
  where
@@ -678,11 +695,12 @@ writeEntryFuncs mName (Entity name attrs) =
                   , constF (mName, lname ++ "ID")])]
         , let numargs = length attrs - 1
               args    = map ((++"_p") . firstLow . attributeName) (tail attrs)
+              adoms   = map attributeDomain (tail attrs)
           in stCmtFunc ("Inserts a new " ++ name ++ " entity.")
             (mName, "new" ++ name ++ attrs2WithKeys) numargs Public
             (foldr (~>)
                    (applyTC (mConn, "DBAction") [baseType (mName, name)])
-                   (map (attr2CType mName name) (tail attrs)))
+                   (map (attr2NewCType mName name) (tail attrs)))
             [simpleRule (map cpvar args)
                (applyF (mER, "insertNewEntry") 
                   [ constF endescr
@@ -690,7 +708,7 @@ writeEntryFuncs mName (Entity name attrs) =
                   , constF (mName, name ++ "ID")
                   , applyF (mName, name)
                      (applyF (mName, name ++ "ID") [cInt 0]
-                      : map cvar args)
+                      : map domVar2NewExp (zip adoms args))
                   ])]
         , stCmtFunc ("Deletes an existing " ++ name ++ " entry by its key.")
             (mName, "delete" ++ name) 0 Public
@@ -770,6 +788,26 @@ writeEntryFuncs mName (Entity name attrs) =
 
   attrs2WithKeys = concatMap (("With"++) . attributeName)
                              (filter isForeignKey attrs)
+
+-- Translates an attribute domain and a variable into an expression.
+-- If the domain has a default value, a maybe expression is generated.
+domVar2NewExp :: (Domain, String) -> CExpr
+domVar2NewExp (dom, v) = case dom of
+  IntDom    (Just x) -> genMaybeWith (cInt x)
+  FloatDom  (Just x) -> genMaybeWith (cFloat x)
+  CharDom   (Just x) -> genMaybeWith (cChar x)
+  BoolDom   (Just x) -> genMaybeWith
+                          (constF (pre (if x then "True" else "False")))
+  StringDom (Just x) -> applyF (pre "if_then_else")
+                         [applyF (pre "null") [cvar v], string2ac x, cvar v]
+  DateDom   (Just (CalendarTime yr mo dy hr mi sc tz)) ->
+    genMaybeWith (applyF ("Time","toClockTime")
+                    [applyF ("Time","CalendarTime")
+                       [cInt yr, cInt mo, cInt dy,
+                        cInt hr, cInt mi, cInt sc, cInt tz]])
+  _ -> cvar v
+ where
+  genMaybeWith dflt = applyF (pre "maybe") [dflt, constF (pre "id"), cvar v]
 
 -- Generates runQ/runT operations (used by the Spicey web framework)
 genSaveDB :: String -> [Entity] -> [CFuncDecl]
