@@ -780,7 +780,7 @@ genEntryFuncs mName (Entity name attrs) =
                            [applyF (mName, firstLow adom1 ++ "Key") [cvar "en"]]
                        ]
                    , CLambda [cpvar "vals"]
-                       (applyF (mConn, "mapDBAction")
+                       (applyF (pre "mapM")
                          [ constF (mName, "get" ++ adom2)
                          , applyF (pre "map")
                                   [ constF (mName, lname ++ aname2)
