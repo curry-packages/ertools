@@ -3,7 +3,7 @@
 --- entity/relationship diagrams
 ---
 --- @author Michael Hanus
---- @version May 2017
+--- @version January 2018
 --- @category database
 ------------------------------------------------------------------------------
 
@@ -17,17 +17,17 @@ module Database.ERD.Goodies
   , storeERDFromProgram
   ) where
 
-import Char            (isUpper)
+import Char            ( isUpper )
 import Database.ERD
-import Directory       (getAbsolutePath)
-import Distribution    (installDir,stripCurrySuffix)
+import Directory       ( getAbsolutePath, removeFile )
+import Distribution    ( installDir, stripCurrySuffix )
 import FlatCurry.Types
 import FlatCurry.Files
 import FlatCurry.Goodies
-import IOExts          (evalCmd)
-import List            (intersperse)
+import IOExts          ( evalCmd, readCompleteFile )
+import List            ( intersperse )
 import Maybe
-import System          (system)
+import System          ( getEnviron, getPID, system )
 
 --- The name of an ERD.
 erdName :: ERD -> String
@@ -152,18 +152,29 @@ storeERDFromProgram progfile = do
       erdfuncs = filter hasERDType funcs
   case erdfuncs of
     [] -> error $ "No definition of ER model found in program " ++ progfile
-    [fd] -> do let cmd = installDir++"/bin/curry"
-                   args = ["--nocypm"
-                          ,":set","v0",":load",progname
-                          ,":add","Database.ERD"
-                          ,":eval"
-                          ,"Database.ERD.writeERDTermFile " ++
-                           snd (funcName fd) ++ " >>= putStrLn"
-                          ,":quit"]
-               (ecode,outstr,errstr) <- evalCmd cmd args ""
+    [fd] -> do currypath <- getEnviron "CURRYPATH"
+               pid <- getPID
+               let tmpfile = "/tmp/ERD2CURRY_tmp_" ++ show pid
+               let cmd = installDir++"/bin/curry"
+                   args  = [ "--nocypm"
+                           , ":set","v0" ]
+                   input = unlines $
+                            (if null currypath
+                               then []
+                               else [":set path " ++ currypath] ) ++
+                            [ ":load " ++ progname
+                            , ":add " ++ "Database.ERD"
+                            , ":eval " ++
+                                "Database.ERD.writeERDTermFile " ++
+                                snd (funcName fd) ++
+                                " >>= writeFile " ++ show tmpfile
+                            , ":quit"]
+               (ecode,outstr,errstr) <- evalCmd cmd args input
                if ecode > 0
                  then error $ "ERROR in ERD term file generation:\n" ++ errstr
-                 else return (head (lines outstr))
+                 else do erdtermfile <- readCompleteFile tmpfile
+                         removeFile tmpfile
+                         return erdtermfile
     _ -> error $ "Multiple ER model definitions found in program " ++ progfile
 
 hasERDType fdecl = funcType fdecl == TCons ("Database.ERD","ERD") []

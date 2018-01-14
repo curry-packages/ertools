@@ -6,25 +6,25 @@ import AbstractCurry.Select (imports)
 import AbstractCurry.Pretty
 import Database.ERD
 import Directory
-import Distribution         (curryCompiler, installDir)
-import FilePath             ((</>))
-import List                 (isSuffixOf)
-import System               (exitWith, getArgs, system)
+import Distribution         ( curryCompiler, installDir )
+import FilePath             ( (</>) )
+import List                 ( isSuffixOf )
+import System               ( exitWith, getArgs, setEnviron, system )
 import Time
 import XML
 
 import Database.ERD.Goodies
 import CodeGeneration
-import ERD2CDBI (writeCDBI)
+import ERD2CDBI             ( writeCDBI )
 import ERD2Graph
-import ERToolsPackageConfig(packagePath, packageVersion)
+import ERToolsPackageConfig ( packagePath, packageVersion, packageLoadPath )
 import Transformation
 import XML2ERD
 
 systemBanner :: String
 systemBanner =
   let bannerText = "ERD->Curry Compiler (Version " ++ packageVersion ++
-                   " of 04/01/18)"
+                   " of 14/01/18)"
       bannerLine = take (length bannerText) (repeat '-')
    in bannerLine ++ "\n" ++ bannerText ++ "\n" ++ bannerLine
 
@@ -127,6 +127,8 @@ startERD2Curry Nothing = do
   putStrLn $ "ERROR: Illegal arguments\n\n" ++ helpText
   exitWith 1
 startERD2Curry (Just opts) = do
+  -- set CURRYPATH in order to compile ERD model (which requires Database.ERD)
+  unless (null packageLoadPath) $ setEnviron "CURRYPATH" packageLoadPath
   -- the directory containing the sources of this tool:
   let erd2currysrcdir = packagePath </> "src"
       orgfile         = optERProg opts

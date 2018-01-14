@@ -56,7 +56,7 @@ Use with Umbrello UML Modeller (no longer actively supported):
 
 2. Compile it into a Curry program with
 
-   erd2curry -x myerd.xmi
+       erd2curry -x myerd.xmi
 
 
 Visualization:
@@ -64,7 +64,7 @@ Visualization:
 
 To visualize an ERD term file as a graph with dotty, execute
 
-erd2curry -v mymodel.erdterm
+    erd2curry -v mymodel.erdterm
 
 
 Examples:
