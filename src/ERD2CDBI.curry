@@ -835,14 +835,9 @@ genSaveDB mname ents =
        "in a directory provided as a parameter.")
       (mname,"restoreDBFrom") 1 Public
       (stringType ~> ioType unitType)
-      [simpleRule [cpvar "dir"]
-         (CDoExpr (setForeignKeyCheck False : map restoreDBTerms ents ++
-                   [setForeignKeyCheck True]))]
+      [simpleRule [cpvar "dir"] (CDoExpr (map restoreDBTerms ents))]
   ]
  where
-  setForeignKeyCheck b =
-    CSExpr $ applyF (mConn, "setForeignKeyCheck") [boolCExpr b]
-  
   saveDBTerms (Entity name _) = CSExpr $
     applyF (mER,"saveDBTerms")
            [ constF (mname, firstLow name ++ "_CDBI_Description")
