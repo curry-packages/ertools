@@ -809,8 +809,7 @@ domVar2NewExp (dom, v) = case dom of
   IntDom    (Just x) -> genMaybeWith (cInt x)
   FloatDom  (Just x) -> genMaybeWith (cFloat x)
   CharDom   (Just x) -> genMaybeWith (cChar x)
-  BoolDom   (Just x) -> genMaybeWith
-                          (constF (pre (if x then "True" else "False")))
+  BoolDom   (Just x) -> genMaybeWith (boolCExpr x)
   StringDom (Just x) -> applyF (pre "if_then_else")
                          [applyF (pre "null") [cvar v], string2ac x, cvar v]
   DateDom   (Just (CalendarTime yr mo dy hr mi sc tz)) ->
@@ -836,9 +835,14 @@ genSaveDB mname ents =
        "in a directory provided as a parameter.")
       (mname,"restoreDBFrom") 1 Public
       (stringType ~> ioType unitType)
-      [simpleRule [cpvar "dir"] (CDoExpr (map restoreDBTerms ents))]
+      [simpleRule [cpvar "dir"]
+         (CDoExpr (setForeignKeyCheck False : map restoreDBTerms ents ++
+                   [setForeignKeyCheck True]))]
   ]
  where
+  setForeignKeyCheck b =
+    CSExpr $ applyF (mConn, "setForeignKeyCheck") [boolCExpr b]
+  
   saveDBTerms (Entity name _) = CSExpr $
     applyF (mER,"saveDBTerms")
            [ constF (mname, firstLow name ++ "_CDBI_Description")
@@ -884,11 +888,11 @@ createDatabase ents db = mapIO_ (\ent -> (createDatabase' ent)) ents
     case a of
       (Attribute "Key" _ _ _) -> do
         hPutStrLn db ("create table '" ++ name ++ "'(" ++
-                      (foldl (\y x -> y ++ " ," ++ (writeDBAttributes x))
+                      (foldl (\y x -> y ++ " ," ++ writeDBAttributes x)
                              (writeDBAttributes a)
                              atr) ++ ");")
       _ -> do let str = ("create table '" ++ name ++ "'(" ++
-                         (foldl (\y x -> y ++ " ," ++ (writeDBRelationship x))
+                         (foldl (\y x -> y ++ " ," ++ writeDBRelationship x)
                                 (writeDBRelationship a)
                                 atr) ++
                          ", primary key (" ++
@@ -900,23 +904,23 @@ createDatabase ents db = mapIO_ (\ent -> (createDatabase' ent)) ents
 writeDBAttributes :: Attribute -> String
 writeDBAttributes (Attribute name ty key nullable) =
     "'" ++ name ++ "'" ++
-            (case ty of
-                 IntDom Nothing      -> ""
-                 IntDom _      -> " int"
-                 FloatDom _    -> " float"
-                 CharDom _     -> " char"
-                 StringDom _   -> " string"
-                 BoolDom _     -> " boolean"
-                 DateDom _     -> " string"
-                 KeyDom str    -> " int " ++ "REFERENCES '" ++ str ++ "'(Key)") ++
-            (case key of
-                 PKey   -> " integer primary key"
-                 Unique -> " unique"
-                 NoKey  -> "") ++
-            (case nullable of
-                 True  -> ""
-                 False -> if key == PKey then ""
-                                         else " not null")
+    (case ty of
+       IntDom Nothing -> ""
+       IntDom _       -> " int"
+       FloatDom _     -> " float"
+       CharDom _      -> " char"
+       StringDom _    -> " string"
+       BoolDom _      -> " boolean"
+       DateDom _      -> " string"
+       KeyDom str     -> " int " ++ "REFERENCES '" ++ str ++ "'(Key)") ++
+    (case key of
+       PKey   -> " integer primary key"
+       Unique -> " unique"
+       NoKey  -> "") ++
+    (case nullable of
+       True  -> ""
+       False -> if key == PKey then ""
+                               else " not null")
 
 -- Same as writeDBAttributes but for the case that the first Attribute of
 -- Entity is not named "Key", because there will be a combined primary key then
@@ -924,33 +928,34 @@ writeDBAttributes (Attribute name ty key nullable) =
 writeDBRelationship :: Attribute -> String
 writeDBRelationship (Attribute name ty key nullable) =
   "'" ++  name ++ "'" ++
-            (case ty of
-                 IntDom _    -> " int"
-                 FloatDom _  -> " float "
-                 CharDom _   -> " char "
-                 StringDom _ -> " string "
-                 BoolDom _   -> " boolean "
-                 DateDom _   -> " string "
-                 KeyDom str    -> " int " ++ "REFERENCES '" ++ str ++"'(Key)")
-         ++ (case key of
-                 Unique -> " unique"
-                 _  -> "")
-         ++ (case nullable of
-                 True  -> ""
-                 False -> " not null")
+  (case ty of
+     IntDom _    -> " int"
+     FloatDom _  -> " float "
+     CharDom _   -> " char "
+     StringDom _ -> " string "
+     BoolDom _   -> " boolean "
+     DateDom _   -> " string "
+     KeyDom str    -> " int " ++ "REFERENCES '" ++ str ++"'(Key)") ++
+  (case key of
+     Unique -> " unique"
+     _  -> "") ++
+  (case nullable of
+     True  -> ""
+     False -> " not null")
 
 -- Write a combined primary key
 writePrimaryKey :: [Attribute] -> String
 writePrimaryKey ((Attribute name _ PKey _):atr) =
   "'" ++ name ++ "'" ++
-  (case (writePrimaryKey atr) of
+  (case writePrimaryKey atr of
      "" -> ""
      x  -> ", " ++ x)
 writePrimaryKey ((Attribute _ _ Unique _):atr) = writePrimaryKey atr
-writePrimaryKey ((Attribute _ _ NoKey _):atr) = writePrimaryKey atr
+writePrimaryKey ((Attribute _ _ NoKey  _):atr) = writePrimaryKey atr
 writePrimaryKey [] = ""
 
-   
+----------------------------------------------------------------------------
+
 firstLow :: String -> String
 firstLow [] = []
 firstLow (c:cs) = toLower c : cs
@@ -962,8 +967,8 @@ firstUp (c:cs) = toUpper c : cs
 lowerCase :: String -> String
 lowerCase s = map toLower s
 
-spaceN :: Int -> String
-spaceN n | n == 0 = ""
-         | otherwise = ' ':(spaceN (n-1))
+-- A Boolean as an AbstractCurry expression.
+boolCExpr :: Bool -> CExpr
+boolCExpr b = constF (pre (if b then "True" else "False"))
 
 ----------------------------------------------------------------------------

@@ -24,7 +24,7 @@ import XML2ERD
 systemBanner :: String
 systemBanner =
   let bannerText = "ERD->Curry Compiler (Version " ++ packageVersion ++
-                   " of 14/01/18)"
+                   " of 19/01/18)"
       bannerLine = take (length bannerText) (repeat '-')
    in bannerLine ++ "\n" ++ bannerText ++ "\n" ++ bannerLine
 
