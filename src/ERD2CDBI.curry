@@ -35,7 +35,7 @@ import Database.ERD.Goodies
 import Text.Pretty
 
 -- Write all the data so CDBI can be used, create a database (if it does
--- not exist) and a .info file.
+-- not exist) and a `.info` file.
 -- The parameters are the name of the file containing the ERD term,
 -- the ER model, and the name of the SQLite3 database.
 writeCDBI :: String -> ERD -> String -> IO ()
@@ -281,7 +281,7 @@ genIDType mName (Entity name _) =
 
 -- Generates all function declarations for an entity.                                               
 genEntityFuncDecls :: String -> Entity -> [CFuncDecl]
-genEntityFuncDecls mName ent = 
+genEntityFuncDecls mName ent =
       [genEntityDescription mName ent, genTables mName ent] ++
       genColumns mName ent ++
       genColumnDescriptions mName ent ++
@@ -323,20 +323,19 @@ genColumnDescriptions mName (Entity name attrs) =
 genColumnDescription :: String -> String -> Attribute -> CFuncDecl
 genColumnDescription mName name a@(Attribute atr _ _ _) =
   stCmtFunc ("The description of the database column `" ++ atr ++
-           "` of the `" ++ name ++ "` entity.")
-        (mName, firstLow name ++ atr ++ "ColDesc")
-        0
-        Public
-        (applyTC (mDescr, "ColumnDescription") 
-                [(attr2CType mName name a)])
-        [(simpleRule [] (applyE (CSymbol (mDescr, "ColDesc"))
-                                [(string2ac ("\"" ++ name ++ "\"." ++ "\"" 
-                                              ++ atr ++ "\"")),
-                                 (attr2CSymbol a),
-                                 (CLambda [genAttrConvLeftOneTwo mName name a]
-                                          (genAttrConvRightOneTwo False a)),
-                                 (CLambda [genAttrConvLeftThree a]
-                                          (genAttrConvRightThree mName name a))]))]                                        
+             "` of the `" ++ name ++ "` entity.")
+    (mName, firstLow name ++ atr ++ "ColDesc")
+    0
+    Public
+    (applyTC (mDescr, "ColumnDescription")  [(attr2CType mName name a)])
+    [simpleRule []
+       (applyE (CSymbol (mDescr, "ColDesc"))
+               [string2ac ("\"" ++ name ++ "\"." ++ "\"" ++ atr ++ "\""),
+                attr2CSymbol a,
+                CLambda [genAttrConvLeftOneTwo mName name a]
+                        (genAttrConvRightOneTwo mName False a),
+                CLambda [genAttrConvLeftThree a]
+                        (genAttrConvRightThree mName name a)])]
 
 -- Generates all needed column-functions based on an entity.
 genColumns :: String -> Entity -> [CFuncDecl]
@@ -438,10 +437,10 @@ createParametersRight ind len = case ind of
 
 -- Generates the first conversion function in the entity-description
 writeTransFunOne :: String -> String -> [Attribute] -> CExpr
-writeTransFunOne mName name attrs = 
+writeTransFunOne mName name attrs =
   CLambda [(CPComb (mName, name) 
-                  (map (genAttrConvLeftOneTwo mName name) attrs))]
-          (list2ac (map (genAttrConvRightOneTwo False) attrs))
+                   (map (genAttrConvLeftOneTwo mName name) attrs))]
+          (list2ac (map (genAttrConvRightOneTwo mName False) attrs))
 
 -- Generates the second conversion function in the entity-description
 -- where the entity key is not used but mapped to a null value.
@@ -452,7 +451,7 @@ writeTransFunTwo mName name attrs =
                       then cpvar "_" :
                            map (genAttrConvLeftOneTwo mName name) (tail attrs)
                       else map (genAttrConvLeftOneTwo mName name) attrs))]
-          (list2ac (map (genAttrConvRightOneTwo True) attrs))
+          (list2ac (map (genAttrConvRightOneTwo mName True) attrs))
 
 isPrimaryKeyAttribute :: Attribute -> Bool
 isPrimaryKeyAttribute (Attribute aname adom _ anull) =
@@ -467,54 +466,60 @@ writeTransFunThree mName name attrs =
           (applyE (CSymbol (mName, name)) 
                   (map (genAttrConvRightThree mName name) attrs))
 
---Generates left-hand-side of first and second conversion function.
+-- Generates left-hand-side of first and second conversion function.
 genAttrConvLeftOneTwo :: String -> String -> Attribute -> CPattern
-genAttrConvLeftOneTwo mName _ (Attribute aname dom NoKey _) =
+genAttrConvLeftOneTwo mName _ (Attribute aname dom NoKey isnull) =
   case dom of
-    KeyDom c -> (CPComb (mName, (c++"ID")) [cpvar (firstLow aname)])
+    KeyDom c -> if isnull then cpvar (firstLow aname)
+                          else CPComb (mName, c++"ID") [cpvar (firstLow aname)]
     _        -> cpvar (firstLow aname)
-genAttrConvLeftOneTwo mName _ (Attribute aname dom Unique _) =
+genAttrConvLeftOneTwo mName _ (Attribute aname dom Unique isnull) =
   case dom of
-    KeyDom c -> (CPComb (mName, (c++"ID")) [cpvar (firstLow aname)])
+    KeyDom c -> if isnull then cpvar (firstLow aname)
+                          else CPComb (mName, c++"ID") [cpvar (firstLow aname)]
     _        -> cpvar (firstLow aname) 
 genAttrConvLeftOneTwo mName  _  (Attribute aname (KeyDom c) PKey _) =
-    (CPComb (mName, (c++"ID")) [cpvar (firstLow aname)])
+    (CPComb (mName, c++"ID") [cpvar (firstLow aname)])
 genAttrConvLeftOneTwo mName name (Attribute aname (IntDom _) PKey _) =
-    (CPComb (mName, (name++"ID")) [cpvar (firstLow aname)])         
+    (CPComb (mName, name++"ID") [cpvar (firstLow aname)])         
 
 -- Generates right-hand-side of first and second conversion function.
--- If first flat is true, a Key attribute is translated into null value.
-genAttrConvRightOneTwo :: Bool -> Attribute -> CExpr
-genAttrConvRightOneTwo False (Attribute aname (IntDom _) _ False) =
+-- If second argument is true, a Key attribute is translated into null value.
+genAttrConvRightOneTwo :: String -> Bool -> Attribute -> CExpr
+genAttrConvRightOneTwo _ False (Attribute aname (IntDom _) _ False) =
  applyE (CSymbol (mConn, "SQLInt")) [cvar (firstLow aname)]
-genAttrConvRightOneTwo True (Attribute aname (IntDom _) _ False) =
+genAttrConvRightOneTwo _ True (Attribute aname (IntDom _) _ False) =
   if aname == "Key" 
    then constF (mConn, "SQLNull")
    else applyE (CSymbol (mConn, "SQLInt")) [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (IntDom _) _ True) =
+genAttrConvRightOneTwo _ _ (Attribute aname (IntDom _) _ True) =
   applyF (mDescr, "sqlIntOrNull") [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (FloatDom _) _ False) =
+genAttrConvRightOneTwo _ _ (Attribute aname (FloatDom _) _ False) =
   applyE (CSymbol (mConn, "SQLFloat")) [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (FloatDom _) _ True) =
+genAttrConvRightOneTwo _ _ (Attribute aname (FloatDom _) _ True) =
   applyF (mDescr, "sqlFloatOrNull") [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (CharDom _) _ False) =
+genAttrConvRightOneTwo _ _ (Attribute aname (CharDom _) _ False) =
   applyE (CSymbol (mConn, "SQLChar")) [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (CharDom _) _ True) =
+genAttrConvRightOneTwo _ _ (Attribute aname (CharDom _) _ True) =
   applyF (mDescr, "sqlCharOrNull") [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (StringDom _) _ False) =
+genAttrConvRightOneTwo _ _ (Attribute aname (StringDom _) _ False) =
   applyE (CSymbol (mConn, "SQLString")) [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (StringDom _) _ True) =
+genAttrConvRightOneTwo _ _ (Attribute aname (StringDom _) _ True) =
   applyF (mDescr, "sqlString") [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (BoolDom _) _ False) =
+genAttrConvRightOneTwo _ _ (Attribute aname (BoolDom _) _ False) =
   applyE (CSymbol (mConn, "SQLBool")) [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (BoolDom _) _ True) =
+genAttrConvRightOneTwo _ _ (Attribute aname (BoolDom _) _ True) =
   applyF (mDescr, "sqlBoolOrNull") [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (DateDom _) _ False) =
+genAttrConvRightOneTwo _ _ (Attribute aname (DateDom _) _ False) =
   applyE (CSymbol (mConn, "SQLDate")) [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (DateDom _) _ True) =
+genAttrConvRightOneTwo _ _ (Attribute aname (DateDom _) _ True) =
   applyF (mDescr, "sqlDateOrNull") [cvar (firstLow aname)]
-genAttrConvRightOneTwo _ (Attribute aname (KeyDom _) _ False) =
+genAttrConvRightOneTwo _ _ (Attribute aname (KeyDom _) _ False) =
   applyE (CSymbol (mConn, "SQLInt")) [cvar (firstLow aname)]
+genAttrConvRightOneTwo mName _ (Attribute aname (KeyDom c) _ True) =
+  applyF (mDescr, "sqlKeyOrNull") [lambdakey2int, cvar (firstLow aname)]
+ where
+  lambdakey2int = CLambda [CPComb (mName, c++"ID") [cpvar "k"]] (cvar "k")
 
 -- Generates left-hand-side of third conversion function.
 genAttrConvLeftThree :: Attribute -> CPattern
@@ -550,8 +555,8 @@ genAttrConvRightThree _ _ (Attribute aname (BoolDom _) NoKey True) =
 genAttrConvRightThree _ _ (Attribute aname (DateDom _) NoKey True) =
   applyF (mDescr, "dateOrNothing") [cvar (firstLow aname)]
 genAttrConvRightThree mName _ (Attribute aname (KeyDom c) NoKey True) =
-  applyE (CSymbol (mName, (c++"ID"))) [(applyF (mDescr, "intOrNothing")
-                                               [cvar (firstLow aname)])] 
+  applyF (mDescr, "keyOrNothing")
+         [CSymbol (mName, c++"ID"), cvar (firstLow aname)]
 genAttrConvRightThree _ _ (Attribute aname (IntDom _) Unique True) =
   applyF (mDescr, "intOrNothing") [cvar (firstLow aname)]
 genAttrConvRightThree _ _ (Attribute aname (FloatDom _) Unique True) =
@@ -565,8 +570,8 @@ genAttrConvRightThree _ _ (Attribute aname (BoolDom _) Unique True) =
 genAttrConvRightThree _ _ (Attribute aname (DateDom _) Unique True) =
   applyF (mDescr, "dateOrNothing") [cvar (firstLow aname)]
 genAttrConvRightThree mName _ (Attribute aname (KeyDom c) Unique True) =
-  applyE (CSymbol (mName, (c++"ID"))) [(applyF (mDescr, "intOrNothing")
-                                              [cvar (firstLow aname)])] 
+  applyF (mDescr, "keyOrNothing")
+         [CSymbol (mName, c++"ID"), cvar (firstLow aname)]
 genAttrConvRightThree mName _ (Attribute aname dom NoKey False) = 
   case dom of
      (KeyDom d) -> applyE (CSymbol (mName, (d++"ID"))) [(cvar (firstLow aname))]
