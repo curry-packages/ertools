@@ -51,6 +51,7 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
       typeDecls  = foldr ((++) . (genEntityTypeDecls cdbimod)) [] ents 
       funcDecls  = genDBPathFunc cdbimod dbPath :
                    foldr ((++) . (genEntityFuncDecls cdbimod)) [] ents ++
+                   genNewDBSchema cdbimod ents ++
                    genSaveDB cdbimod ents ++
                    genRunFuncs cdbimod
   writeFile cdbiFile $ unlines $
@@ -80,7 +81,7 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
     when (exsqlite3>0) $
       error "Database interface `sqlite3' not found. Please install package `sqlite3'!"
     db <- connectToCommand $ "sqlite3 " ++ dbPath
-    createDatabase ents db
+    hPutStrLn db $ unlines (map entity2createTable ents)
     hClose db
 
 genDBPathFunc :: String -> String -> CFuncDecl
@@ -826,7 +827,28 @@ domVar2NewExp (dom, v) = case dom of
  where
   genMaybeWith dflt = applyF (pre "maybe") [dflt, constF (pre "id"), cvar v]
 
--- Generates runQ/runT operations (used by the Spicey web framework)
+-- Generates operations to create a new database with its schema.
+genNewDBSchema :: String -> [Entity] -> [CFuncDecl]
+genNewDBSchema mname ents =
+  [ stCmtFunc
+      ("Generates a new database (name provided as the parameter) and\n" ++
+       "creates its schema.")
+      (mname,"createNewDB") 1 Public
+      (stringType ~> ioType unitType)
+      [CRule [cpvar "dbfile"]
+        (CSimpleRhs
+          (CDoExpr [CSPat (cpvar "conn")
+                          (applyF (mConn,"connectSQLite") [cvar "dbfile"]),
+                    CSExpr (applyF (mConn,"writeConnection") [cvar "cstr", cvar "conn"]),
+                    CSExpr (applyF (mConn,"disconnect") [cvar "conn"])])
+          [CLocalPat (cpvar "cstr")
+            (CSimpleRhs (applyF (pre "unlines")
+                 [list2ac (map (string2ac . entity2createTable) ents)])
+                        [])])]
+  ]
+
+
+-- Generates operations to save and restore the complete database.
 genSaveDB :: String -> [Entity] -> [CFuncDecl]
 genSaveDB mname ents =
   [ stCmtFunc
@@ -855,7 +877,7 @@ genSaveDB mname ents =
            , constF (mname,"sqliteDBFile")
            , cvar "dir"]
 
--- Generates runQ/runT operations (used by the Spicey web framework)
+-- Generates runQ/runT operations (used by the Spicey web framework).
 genRunFuncs :: String -> [CFuncDecl]
 genRunFuncs mname =
   [ stCmtFunc "Runs a DB action (typically a query)."
@@ -880,29 +902,24 @@ genRunFuncs mname =
 
 
 ----------------------------------------------------------------------------
--- Creates a sqlite3-database (sqlite3 needs to be installed)
-createDatabase :: [Entity] -> Handle -> IO ()
-createDatabase ents db = mapIO_ (\ent -> (createDatabase' ent)) ents
- where
-  createDatabase' (Entity name (a:atr)) =
-    case a of
-      (Attribute "Key" _ _ _) -> do
-        hPutStrLn db ("create table '" ++ name ++ "'(" ++
-                      (foldl (\y x -> y ++ " ," ++ writeDBAttributes x)
-                             (writeDBAttributes a)
-                             atr) ++ ");")
-      _ -> do let str = ("create table '" ++ name ++ "'(" ++
-                         (foldl (\y x -> y ++ " ," ++ writeDBRelationship x)
-                                (writeDBRelationship a)
-                                atr) ++
-                         ", primary key (" ++
-                         (writePrimaryKey (a:atr)) ++ "));")
-              hPutStrLn db str
+--- Generates the `CREATE TABLE` SQL command for a given entity.
+entity2createTable :: Entity -> String
+entity2createTable (Entity name (a:atr)) = case a of
+  Attribute "Key" _ _ _ ->
+    "create table '" ++ name ++ "'(" ++
+    foldl (\y x -> y ++ " ," ++ attr2colType x) (attr2colType a) atr ++
+    ");"
+  _ -> "create table '" ++ name ++ "'(" ++
+       foldl (\y x -> y ++ " ," ++ relationship2colType x)
+             (relationship2colType a)
+             atr ++
+       ", primary key (" ++ attr2combPrimaryKey (a:atr) ++ "));"
 
--- Write Attribute for table-creation (Used when first Attribute
--- of Entity is named "Key" because the primary key will be that "Key" then)
-writeDBAttributes :: Attribute -> String
-writeDBAttributes (Attribute name ty key nullable) =
+-- Transforms an attribute to the corresponding column type of the
+-- database table (used when the first attribute of the entity
+-- is named "Key" because the primary key will be that "Key" then).
+attr2colType :: Attribute -> String
+attr2colType (Attribute name ty key nullable) =
     "'" ++ name ++ "'" ++
     (case ty of
        IntDom Nothing -> ""
@@ -910,7 +927,7 @@ writeDBAttributes (Attribute name ty key nullable) =
        FloatDom _     -> " float"
        CharDom _      -> " char"
        StringDom _    -> " string"
-       BoolDom _      -> " boolean"
+       BoolDom _      -> " string" -- " boolean" -- no boolean type in SQLite3
        DateDom _      -> " string"
        KeyDom str     -> " int " ++ "REFERENCES '" ++ str ++ "'(Key)") ++
     (case key of
@@ -922,18 +939,18 @@ writeDBAttributes (Attribute name ty key nullable) =
        False -> if key == PKey then ""
                                else " not null")
 
--- Same as writeDBAttributes but for the case that the first Attribute of
--- Entity is not named "Key", because there will be a combined primary key then
--- and the string needs to be built a little different then
-writeDBRelationship :: Attribute -> String
-writeDBRelationship (Attribute name ty key nullable) =
+-- Same as 'attr2colType' but for the case that the first attribute of the
+-- entity is not named "Key", because there will be a combined primary key
+-- so that the description is a little different.
+relationship2colType :: Attribute -> String
+relationship2colType (Attribute name ty key nullable) =
   "'" ++  name ++ "'" ++
   (case ty of
      IntDom _    -> " int"
      FloatDom _  -> " float "
      CharDom _   -> " char "
      StringDom _ -> " string "
-     BoolDom _   -> " boolean "
+     BoolDom _   -> " string " -- " boolean " -- no boolean type in SQLite3
      DateDom _   -> " string "
      KeyDom str    -> " int " ++ "REFERENCES '" ++ str ++"'(Key)") ++
   (case key of
@@ -944,15 +961,15 @@ writeDBRelationship (Attribute name ty key nullable) =
      False -> " not null")
 
 -- Write a combined primary key
-writePrimaryKey :: [Attribute] -> String
-writePrimaryKey ((Attribute name _ PKey _):atr) =
+attr2combPrimaryKey :: [Attribute] -> String
+attr2combPrimaryKey (Attribute name _ PKey _ : atr) =
   "'" ++ name ++ "'" ++
-  (case writePrimaryKey atr of
+  (case attr2combPrimaryKey atr of
      "" -> ""
      x  -> ", " ++ x)
-writePrimaryKey ((Attribute _ _ Unique _):atr) = writePrimaryKey atr
-writePrimaryKey ((Attribute _ _ NoKey  _):atr) = writePrimaryKey atr
-writePrimaryKey [] = ""
+attr2combPrimaryKey (Attribute _ _ Unique _ : atr) = attr2combPrimaryKey atr
+attr2combPrimaryKey (Attribute _ _ NoKey  _ : atr) = attr2combPrimaryKey atr
+attr2combPrimaryKey [] = ""
 
 ----------------------------------------------------------------------------
 
