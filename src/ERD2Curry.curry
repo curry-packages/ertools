@@ -1,19 +1,21 @@
 module ERD2Curry( main, erd2curryWithDBandERD, erd2cdbiWithDBandERD )
   where
 
+import System.Directory
+import System.FilePath      ( (</>) )
+import System.Process       ( exitWith, system )
+import System.Environment   ( getArgs, setEnv )
+import Data.List            ( isSuffixOf )
+import Data.Time
+import Distribution         ( curryCompiler, installDir )
+
+import XML
 import AbstractCurry.Files  (readCurry)
 import AbstractCurry.Select (imports)
 import AbstractCurry.Pretty
-import Database.ERD
-import Directory
-import Distribution         ( curryCompiler, installDir )
-import FilePath             ( (</>) )
-import List                 ( isSuffixOf )
-import System               ( exitWith, getArgs, setEnviron, system )
-import Time
-import XML
 
 import Database.ERD.Goodies
+import Database.ERD
 import CodeGeneration
 import ERD2CDBI             ( writeCDBI )
 import ERD2Graph
@@ -128,7 +130,7 @@ startERD2Curry Nothing = do
   exitWith 1
 startERD2Curry (Just opts) = do
   -- set CURRYPATH in order to compile ERD model (which requires Database.ERD)
-  unless (null packageLoadPath) $ setEnviron "CURRYPATH" packageLoadPath
+  unless (null packageLoadPath) $ setEnv "CURRYPATH" packageLoadPath
   -- the directory containing the sources of this tool:
   let erd2currysrcdir = packagePath </> "src"
       orgfile         = optERProg opts
@@ -208,7 +210,7 @@ moveOldVersion fname = do
     toD (y `mod` 100) ++ toD mo ++ toD d ++ toD h ++ toD mi ++ toD s
 
   toD i = if i<10 then '0':show i else show i
-  
+
 
 --- Read an ERD specification from an XML file in Umbrello format.
 transformXmlFile :: String -> String -> IO (String,ERD)

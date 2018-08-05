@@ -6,14 +6,15 @@
 
 module ERD2Graph(viewERD) where
 
-import IO
+import System.IO
+import Data.Char(isAlphaNum)
+import Data.List(intersperse)
 import IOExts
-import Char(isAlphaNum)
-import List(intersperse)
-import Database.ERD
-import Distribution(getRcVar)
 
 import ShowDotGraph
+
+import Database.ERD
+import Distribution(getRcVar)
 
 -- Should a relation represented as an explicit node?
 -- If not, it will be represented as an arc with a label.
@@ -68,4 +69,3 @@ erd2dot (ERD erdname ens rels) =
   showCard (Exactly n) = '(' : show n ++ "," ++ show n ++ ")"
   showCard (Between n Infinite) = '(' : show n ++ ",n)"
   showCard (Between n (Max m)) = '(' : show n ++ "," ++ show m ++ ")"
-

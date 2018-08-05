@@ -1,17 +1,17 @@
 {
     "name": "ertools",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "author": "Michael Hanus <mh@informatik.uni-kiel.de>",
     "synopsis": "Tools for dealing with database applications specified by entity-relationship diagrams",
     "category": [ "Database" ],
     "dependencies": {
-        "abstract-curry" : ">= 2.0.0",
-        "cdbi"           : ">= 2.0.0",
-        "flatcurry"      : ">= 2.0.0",
-        "graphviz"       : ">= 2.0.0",
-        "keydb"          : ">= 2.0.0",
-        "wl-pprint"      : ">= 0.0.1",
-        "xml"            : ">= 2.0.0"
+        "abstract-curry" : ">= 3.0.0",
+        "cdbi"           : ">= 3.0.0",
+        "flatcurry"      : ">= 3.0.0",
+        "graphviz"       : ">= 3.0.0",
+        "keydb"          : ">= 3.0.0",
+        "wl-pprint"      : ">= 2.0.0",
+        "xml"            : ">= 3.0.0"
     },
     "compilerCompatibility": {
         "pakcs": ">= 2.0.0",

@@ -18,17 +18,16 @@ import AbstractCurry.Types
 import AbstractCurry.Pretty
 import AbstractCurry.Build
 
-import Char           ( toLower, toUpper )
-import Directory      ( doesFileExist, getAbsolutePath )
+import Data.Char        ( toLower, toUpper )
+import Data.List
+import Data.Time
+import System.Directory ( doesFileExist, getAbsolutePath )
+import System.IO
+import System.Process
 import Distribution   ( installDir )
-import qualified FilePath as FP ( (</>), combine, splitFileName)
-import IO
 import IOExts         ( connectToCommand )
-import List
 import ReadShowTerm   ( readsQTerm )
 import SetFunctions   ( selectValue, set2 )
-import System
-import Time
 
 import Database.ERD
 import Database.ERD.Goodies
@@ -48,7 +47,7 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
                  , "Database.CDBI.Criteria"
                  , "Database.CDBI.Connection"
                  , "Database.CDBI.Description"]
-      typeDecls  = foldr ((++) . (genEntityTypeDecls cdbimod)) [] ents 
+      typeDecls  = foldr ((++) . (genEntityTypeDecls cdbimod)) [] ents
       funcDecls  = genDBPathFunc cdbimod dbPath :
                    foldr ((++) . (genEntityFuncDecls cdbimod)) [] ents ++
                    genNewDBSchema cdbimod ents ++
@@ -104,69 +103,69 @@ mER = "Database.CDBI.ER"
 
 -- generates an AbstractCurry expression representing the parser information
 -- and writes it to the file
-writeParserFile :: Handle -> 
-                   String -> 
+writeParserFile :: Handle ->
+                   String ->
                    [Entity] ->
-                   [Relationship] -> 
-                   String -> 
+                   [Relationship] ->
+                   String ->
                    IO()
 writeParserFile infofilehandle name ents rels dbPath = do
-  hPutStrLn infofilehandle 
-            (pPrint (ppCExpr defaultOptions 
-                             (applyE (CSymbol ("SQLParserInfoType", "PInfo")) 
+  hPutStrLn infofilehandle
+            (pPrint (ppCExpr defaultOptions
+                             (applyE (CSymbol ("SQLParserInfoType", "PInfo"))
                                      [string2ac dbPath,
                                       string2ac name,
-                                      relations, 
+                                      relations,
                                       nullables,
                                       attributes,
-                                      attrTypes])))  
+                                      attrTypes])))
     where relations = list2ac (foldr ((++) . getRelationTypes ents) [] rels)
-          nullables = list2ac (foldr ((++) . getNullableAttr) [] ents) 
+          nullables = list2ac (foldr ((++) . getNullableAttr) [] ents)
           attributes = list2ac (map getAttrList ents)
-          attrTypes = list2ac (foldr ((++) . getAttrTypes) [] ents) 
+          attrTypes = list2ac (foldr ((++) . getAttrTypes) [] ents)
 
 
--- generates data term for each  relationship 
+-- generates data term for each  relationship
 -- depending on its type
 getRelationTypes :: [Entity] -> Relationship -> [CExpr]
 getRelationTypes ents rel = selectValue (set2 getrelationtypes ents rel)
 
 -- Non-deterministic implementation:
 getrelationtypes :: [Entity] -> Relationship -> [CExpr]
-getrelationtypes ents (Relationship 
-                       "" 
-                       [REnd e1Name _ _, REnd e2Name reName _]) =                    
-                           [tupleExpr [tupleExpr (map string2ac 
-                                                      [e1Name, reName, 
+getrelationtypes ents (Relationship
+                       ""
+                       [REnd e1Name _ _, REnd e2Name reName _]) =
+                           [tupleExpr [tupleExpr (map string2ac
+                                                      [e1Name, reName,
                                                       (getCorEnt ents e1Name e2Name)]),
-                                         applyE (CSymbol ("SQLParserInfoType","MtoN")) 
+                                         applyE (CSymbol ("SQLParserInfoType","MtoN"))
                                                 [(string2ac e2Name)]],
-                            tupleExpr [tupleExpr (map string2ac 
-                                                      [e1Name, e2Name, 
+                            tupleExpr [tupleExpr (map string2ac
+                                                      [e1Name, e2Name,
                                                       (getCorEnt ents e1Name e2Name)]),
-                                         applyE (CSymbol ("SQLParserInfoType","MtoN")) 
+                                         applyE (CSymbol ("SQLParserInfoType","MtoN"))
                                                  [(string2ac e2Name)]]]
-getrelationtypes _ (Relationship 
-                       rName 
+getrelationtypes _ (Relationship
+                       rName
                        [REnd e1Name re1Name (Between 0 _),
                          REnd e2Name re2Name (Exactly 1)]) =
-                            [tupleExpr [tupleExpr (map string2ac 
+                            [tupleExpr [tupleExpr (map string2ac
                                                        [e2Name, re1Name, e1Name]),
                                            applyE (CSymbol ("SQLParserInfoType","OnetoN"))
                                                    [(string2ac rName)]],
-                             tupleExpr [tupleExpr (map string2ac 
+                             tupleExpr [tupleExpr (map string2ac
                                                   [e1Name, re2Name, e2Name]),
-                                          applyE (CSymbol  ("SQLParserInfoType", "NtoOne")) 
-                                                  [(string2ac rName)]]]  
-getrelationtypes _ (Relationship 
-                     rName@(_:_) 
+                                          applyE (CSymbol  ("SQLParserInfoType", "NtoOne"))
+                                                  [(string2ac rName)]]]
+getrelationtypes _ (Relationship
+                     rName@(_:_)
                      [REnd e1Name re1Name (Exactly 1),
-                       REnd e2Name re2Name (Between 0 _)]) = 
+                       REnd e2Name re2Name (Between 0 _)]) =
                           [tupleExpr [tupleExpr (map string2ac
                                                      [e2Name, re1Name, e1Name]),
-                                         applyE (CSymbol ("SQLParserInfoType", "NtoOne")) 
+                                         applyE (CSymbol ("SQLParserInfoType", "NtoOne"))
                                                  [(string2ac rName)]],
-                           tupleExpr [tupleExpr (map string2ac 
+                           tupleExpr [tupleExpr (map string2ac
                                                      [e1Name, re2Name, e2Name]),
                                         applyE (CSymbol ("SQLParserInfoType", "OnetoN"))
                                                [(string2ac rName)]]]
@@ -174,11 +173,11 @@ getrelationtypes _ (Relationship
                       rName
                       [REnd e1Name re1Name (Between _ _),
                        REnd e2Name re2Name (Between 0 (Max 1))]) =
-                          [tupleExpr [tupleExpr (map string2ac 
+                          [tupleExpr [tupleExpr (map string2ac
                                                      [e2Name, re1Name, e1Name]),
                                         applyE (CSymbol ("SQLParserInfoType", "OnetoN"))
                                                [(string2ac rName)]],
-                           tupleExpr [tupleExpr (map string2ac 
+                           tupleExpr [tupleExpr (map string2ac
                                                      [e1Name, re2Name, e2Name]),
                                         applyE (CSymbol ("SQLParserInfoType", "NtoOne"))
                                                [(string2ac rName)]]]
@@ -186,48 +185,48 @@ getrelationtypes _ (Relationship
                       rName
                       [REnd e1Name re1Name (Between 0 (Max 1)),
                        REnd e2Name re2Name (Between _ _)]) =
-                          [tupleExpr [tupleExpr (map string2ac 
+                          [tupleExpr [tupleExpr (map string2ac
                                                      [e2Name, re1Name, e1Name]),
                                          applyE (CSymbol ("SQLParserInfoType", "NtoOne"))
                                                 [(string2ac rName)]],
-                           tupleExpr [tupleExpr (map string2ac 
+                           tupleExpr [tupleExpr (map string2ac
                                                     [e1Name, re2Name, e2Name]),
                                        applyE (CSymbol ("SQLParserInfoType","OnetoN"))
                                                [(string2ac rName)]]]
 
---finding second entity belonging to an MtoN relationship                                                
+--finding second entity belonging to an MtoN relationship
 getCorEnt :: [Entity] -> String -> String -> String
 getCorEnt [] _ _ = ""  -- this should not happen
-getCorEnt ((Entity name attrs):ents) eName rName = 
-  if name == rName 
+getCorEnt ((Entity name attrs):ents) eName rName =
+  if name == rName
    then checkAttributes attrs eName
    else getCorEnt ents eName rName
   where checkAttributes ((Attribute _ typ _ _):atts) n =
            case typ of
-             (KeyDom kName) -> if kName == n 
+             (KeyDom kName) -> if kName == n
                                  then checkAttributes atts n
                                  else kName
              _              -> checkAttributes atts n
         checkAttributes [] _ = "" --should not happen
- 
 
--- generates data term providing for each attribute (name) 
+
+-- generates data term providing for each attribute (name)
 -- if it is nullable or not
-getNullableAttr :: Entity -> [CExpr] 
-getNullableAttr (Entity name attrs) = (map (getNullValue name) attrs) 
+getNullableAttr :: Entity -> [CExpr]
+getNullableAttr (Entity name attrs) = (map (getNullValue name) attrs)
 
 getNullValue :: String -> Attribute -> CExpr
-getNullValue ename (Attribute aName _ _ nullable) =  
-        tupleExpr [string2ac (firstLow ename ++ aName) 
+getNullValue ename (Attribute aName _ _ nullable) =
+        tupleExpr [string2ac (firstLow ename ++ aName)
                   , CSymbol (pre (show nullable))]
 
 -- generates data term providing the type of each attribute
 getAttrTypes :: Entity -> [CExpr]
-getAttrTypes (Entity name attrs) =  
+getAttrTypes (Entity name attrs) =
                 (map (getTypeOf name) attrs)
-                                        
+
 getTypeOf :: String -> Attribute -> CExpr
-getTypeOf ename (Attribute aName domain key _) = 
+getTypeOf ename (Attribute aName domain key _) =
  case domain of
     (IntDom _ ) -> case key of
                      PKey -> tupleExpr [string2ac (firstLow ename ++ aName),
@@ -255,32 +254,32 @@ getAttrList :: Entity -> CExpr
 getAttrList (Entity name attrs) =
   tupleExpr [string2ac (lowerCase name),
              tupleExpr [(string2ac name),
-             list2ac (map (string2ac . attributeName) attrs)]]    
+             list2ac (map (string2ac . attributeName) attrs)]]
 
 ------------------------------------------------------------------------------
 -- Generating Curry program containing all type/operations needed for CDBI use
 
--- Generates the declaration of datatype and ID-type for each entity.   
-genEntityTypeDecls :: String -> Entity -> [CTypeDecl] 
-genEntityTypeDecls mName ent =                        
+-- Generates the declaration of datatype and ID-type for each entity.
+genEntityTypeDecls :: String -> Entity -> [CTypeDecl]
+genEntityTypeDecls mName ent =
    [genEntityType mName ent, genIDType mName ent]
-                           
+
 -- Generates a entity-datatype based on an entity.
 genEntityType :: String -> Entity -> CTypeDecl
-genEntityType mName (Entity name attrs)  = 
+genEntityType mName (Entity name attrs)  =
  CType (mName, name) Public []
        [simpleCCons (mName, name) Public
                     (map (attr2CType mName name) attrs)]
        [pre "Eq", pre "Show", pre "Read"]
-                    
+
 -- Generates a ID-datatype based on an entity.
 genIDType :: String -> Entity -> CTypeDecl
-genIDType mName (Entity name _) = 
+genIDType mName (Entity name _) =
  CType (mName, (name++"ID")) Public []
        [simpleCCons (mName, (name ++"ID")) Public [intType]]
        [pre "Eq", pre "Show", pre "Read"]
 
--- Generates all function declarations for an entity.                                               
+-- Generates all function declarations for an entity.
 genEntityFuncDecls :: String -> Entity -> [CFuncDecl]
 genEntityFuncDecls mName ent =
       [genEntityDescription mName ent, genTables mName ent] ++
@@ -292,7 +291,7 @@ genEntityFuncDecls mName ent =
 
 -- Generates an entity-description based on an entity.
 genEntityDescription :: String -> Entity -> CFuncDecl
-genEntityDescription mName (Entity name attrs) = 
+genEntityDescription mName (Entity name attrs) =
   stCmtFunc ("The ER description of the `" ++ name ++ "` entity.")
         (mName, firstLow name ++ "_CDBI_Description" )
         0
@@ -308,7 +307,7 @@ genEntityDescription mName (Entity name attrs) =
 
 -- Generates a table description for on an entity.
 genTables :: String -> Entity -> CFuncDecl
-genTables mName (Entity name _) = 
+genTables mName (Entity name _) =
   stCmtFunc ("The database table of the `" ++ name ++ "` entity.")
         (mName, firstLow name ++ "Table")
         0
@@ -316,9 +315,9 @@ genTables mName (Entity name _) =
         (baseType (mDescr, "Table"))
         [(simpleRule [] (string2ac name))]
 
--- Generates Column Descriptions based on an entity.        
+-- Generates Column Descriptions based on an entity.
 genColumnDescriptions :: String -> Entity -> [CFuncDecl]
-genColumnDescriptions mName (Entity name attrs) = 
+genColumnDescriptions mName (Entity name attrs) =
   map (genColumnDescription mName name) attrs
 
 genColumnDescription :: String -> String -> Attribute -> CFuncDecl
@@ -354,7 +353,7 @@ genColumn mName name a@(Attribute atr _ _ _) =
           (applyTC (mDescr, "Column") [(getAttributeType mName name a)])
           [(simpleRule [] (applyE (CSymbol (mDescr, "Column"))
                                   [(string2ac ("\"" ++ atr ++ "\"")),
-                                   (string2ac ("\"" ++ name ++ "\"." 
+                                   (string2ac ("\"" ++ name ++ "\"."
                                        ++ "\"" ++ atr ++ "\"")) ]))]
 
 getAttributeType :: String -> String -> Attribute -> CTypeExpr
@@ -374,20 +373,20 @@ getType mName (KeyDom name) = baseType (mName, name++"ID")
 
 -- Generates all getter and setter methods based on an entity.
 genGetterSetters :: String -> Entity -> [CFuncDecl]
-genGetterSetters mName (Entity name attrs) = 
+genGetterSetters mName (Entity name attrs) =
  let indAttrs = zip attrs [1..(length attrs)]
   in map (genGetter mName name (length attrs)) indAttrs ++
      map (genSetter mName name (length attrs)) indAttrs
 
 -- Generates a setter method based on an attribute.
 genSetter :: String -> String -> Int -> (Attribute, Int) -> CFuncDecl
-genSetter mName eName len (att@(Attribute name _ _ _), i) = 
+genSetter mName eName len (att@(Attribute name _ _ _), i) =
   stCmtFunc ("Sets the attribute `" ++ name ++
            "` of the `" ++ eName ++ "` entity.")
         (mName, ("set" ++ eName ++ name))
         2
         Public
-        ((baseType (mName, eName)) ~> (attr2CType mName eName att) 
+        ((baseType (mName, eName)) ~> (attr2CType mName eName att)
                                     ~> (baseType (mName, eName)))
         [(simpleRule [(CPComb (mName, eName) (createParametersLeft i (len-i))),
                       (cpvar "a")]
@@ -396,7 +395,7 @@ genSetter mName eName len (att@(Attribute name _ _ _), i) =
 
 -- Generates a getter method based on an attribute.
 genGetter :: String -> String -> Int -> (Attribute, Int) -> CFuncDecl
-genGetter mName eName len (att@(Attribute name _ _ _), i) = 
+genGetter mName eName len (att@(Attribute name _ _ _), i) =
   stCmtFunc ("Gets the attribute `" ++ name ++
            "` of the `" ++ eName ++ "` entity.")
         (mName, ((firstLow eName) ++ name))
@@ -439,7 +438,7 @@ createParametersRight ind len = case ind of
 -- Generates the first conversion function in the entity-description
 writeTransFunOne :: String -> String -> [Attribute] -> CExpr
 writeTransFunOne mName name attrs =
-  CLambda [(CPComb (mName, name) 
+  CLambda [(CPComb (mName, name)
                    (map (genAttrConvLeftOneTwo mName name) attrs))]
           (list2ac (map (genAttrConvRightOneTwo mName False) attrs))
 
@@ -463,8 +462,8 @@ isPrimaryKeyAttribute (Attribute aname adom _ anull) =
 -- Generates the third conversion function in the entity-description
 writeTransFunThree :: String -> String -> [Attribute] -> CExpr
 writeTransFunThree mName name attrs =
-  CLambda [(listPattern (map genAttrConvLeftThree attrs))] 
-          (applyE (CSymbol (mName, name)) 
+  CLambda [(listPattern (map genAttrConvLeftThree attrs))]
+          (applyE (CSymbol (mName, name))
                   (map (genAttrConvRightThree mName name) attrs))
 
 -- Generates left-hand-side of first and second conversion function.
@@ -478,11 +477,11 @@ genAttrConvLeftOneTwo mName _ (Attribute aname dom Unique isnull) =
   case dom of
     KeyDom c -> if isnull then cpvar (firstLow aname)
                           else CPComb (mName, c++"ID") [cpvar (firstLow aname)]
-    _        -> cpvar (firstLow aname) 
+    _        -> cpvar (firstLow aname)
 genAttrConvLeftOneTwo mName  _  (Attribute aname (KeyDom c) PKey _) =
     (CPComb (mName, c++"ID") [cpvar (firstLow aname)])
 genAttrConvLeftOneTwo mName name (Attribute aname (IntDom _) PKey _) =
-    (CPComb (mName, name++"ID") [cpvar (firstLow aname)])         
+    (CPComb (mName, name++"ID") [cpvar (firstLow aname)])
 
 -- Generates right-hand-side of first and second conversion function.
 -- If second argument is true, a Key attribute is translated into null value.
@@ -490,7 +489,7 @@ genAttrConvRightOneTwo :: String -> Bool -> Attribute -> CExpr
 genAttrConvRightOneTwo _ False (Attribute aname (IntDom _) _ False) =
  applyE (CSymbol (mConn, "SQLInt")) [cvar (firstLow aname)]
 genAttrConvRightOneTwo _ True (Attribute aname (IntDom _) _ False) =
-  if aname == "Key" 
+  if aname == "Key"
    then constF (mConn, "SQLNull")
    else applyE (CSymbol (mConn, "SQLInt")) [cvar (firstLow aname)]
 genAttrConvRightOneTwo _ _ (Attribute aname (IntDom _) _ True) =
@@ -525,21 +524,21 @@ genAttrConvRightOneTwo mName _ (Attribute aname (KeyDom c) _ True) =
 -- Generates left-hand-side of third conversion function.
 genAttrConvLeftThree :: Attribute -> CPattern
 genAttrConvLeftThree (Attribute aname (IntDom _) _ False) =
-    CPComb (mConn, "SQLInt") [cpvar (firstLow aname)]  
+    CPComb (mConn, "SQLInt") [cpvar (firstLow aname)]
 genAttrConvLeftThree (Attribute aname (FloatDom _) _ False) =
     CPComb (mConn, "SQLFloat") [cpvar (firstLow aname)]
 genAttrConvLeftThree (Attribute aname (CharDom _) _ False) =
-    CPComb (mConn, "SQLChar") [cpvar (firstLow aname)] 
+    CPComb (mConn, "SQLChar") [cpvar (firstLow aname)]
 genAttrConvLeftThree (Attribute aname (StringDom _) _ False) =
-    CPComb (mConn, "SQLString") [cpvar (firstLow aname)]  
+    CPComb (mConn, "SQLString") [cpvar (firstLow aname)]
 genAttrConvLeftThree (Attribute aname (BoolDom _) _ False) =
-    CPComb (mConn, "SQLBool") [cpvar (firstLow aname)]  
+    CPComb (mConn, "SQLBool") [cpvar (firstLow aname)]
 genAttrConvLeftThree (Attribute aname (DateDom _) _ False) =
-    CPComb (mConn, "SQLDate") [cpvar (firstLow aname)] 
+    CPComb (mConn, "SQLDate") [cpvar (firstLow aname)]
 genAttrConvLeftThree (Attribute aname (KeyDom _) _ False) =
-    CPComb (mConn, "SQLInt") [cpvar (firstLow aname)] 
+    CPComb (mConn, "SQLInt") [cpvar (firstLow aname)]
 genAttrConvLeftThree (Attribute aname _ _ True) =
-    cpvar (firstLow aname)       
+    cpvar (firstLow aname)
 
 -- Generates right-hand-side of third conversion function
 genAttrConvRightThree ::String -> String -> Attribute -> CExpr
@@ -573,7 +572,7 @@ genAttrConvRightThree _ _ (Attribute aname (DateDom _) Unique True) =
 genAttrConvRightThree mName _ (Attribute aname (KeyDom c) Unique True) =
   applyF (mDescr, "keyOrNothing")
          [CSymbol (mName, c++"ID"), cvar (firstLow aname)]
-genAttrConvRightThree mName _ (Attribute aname dom NoKey False) = 
+genAttrConvRightThree mName _ (Attribute aname dom NoKey False) =
   case dom of
      (KeyDom d) -> applyE (CSymbol (mName, (d++"ID"))) [(cvar (firstLow aname))]
      _          -> cvar (firstLow aname)
@@ -582,9 +581,9 @@ genAttrConvRightThree mName _ (Attribute aname dom Unique False) =
      (KeyDom d) -> applyE (CSymbol (mName, (d++"ID"))) [(cvar (firstLow aname))]
      _          -> cvar (firstLow aname)
 genAttrConvRightThree mName _ (Attribute aname (KeyDom c) PKey _) =
-  applyE (CSymbol (mName, (c++"ID"))) [(cvar (firstLow aname))]  
+  applyE (CSymbol (mName, (c++"ID"))) [(cvar (firstLow aname))]
 genAttrConvRightThree mName name (Attribute aname (IntDom _) PKey _) =
-  applyE (CSymbol (mName, (name++"ID"))) [(cvar (firstLow aname))]  
+  applyE (CSymbol (mName, (name++"ID"))) [(cvar (firstLow aname))]
 
 -- Translates an attribute into the corresponding type of entity datatype.
 attr2CType :: String -> String -> Attribute -> CTypeExpr
@@ -632,20 +631,20 @@ attr2CSymbol (Attribute _ adom _ _) = domain2CSymbol adom
   domain2CSymbol (BoolDom   _) = CSymbol (mConn, "SQLTypeBool")
   domain2CSymbol (DateDom   _) = CSymbol (mConn, "SQLTypeDate")
   domain2CSymbol (KeyDom    _) = CSymbol (mConn, "SQLTypeInt")
-  
+
 -- Generates operations to transform entity keys, like
 -- id-to-value, id-to-int, show/read functions.
 genKeyTransformFuncs :: String -> Entity -> [CFuncDecl]
 genKeyTransformFuncs mName (Entity name attrs) =
   case head attrs of
-     (Attribute "Key" _ PKey _ ) -> 
+     (Attribute "Key" _ PKey _ ) ->
         [ stCmtFunc ("id-to-value function for entity `" ++ name ++ "`.")
             (mName, firstLow name ++ "ID") 1 Public
-            (baseType (mName, name ++ "ID") ~> 
-             applyTC ("Database.CDBI.Criteria", "Value") 
+            (baseType (mName, name ++ "ID") ~>
+             applyTC ("Database.CDBI.Criteria", "Value")
                      [baseType (mName, name ++ "ID")])
             [simpleRule [genAttrConvLeftOneTwo mName name (head attrs)]
-                        (applyF ("Database.CDBI.Criteria", "idVal") 
+                        (applyF ("Database.CDBI.Criteria", "idVal")
                                 [cvar "key"])]
         , stCmtFunc ("id-to-int function for entity `" ++ name ++ "`.")
             (mName, toKeyToInt $ firstLow name) 1 Public
@@ -687,7 +686,7 @@ genKeyTransformFuncs mName (Entity name attrs) =
 genEntryFuncs :: String -> Entity -> [CFuncDecl]
 genEntryFuncs mName (Entity name attrs) =
   case head attrs of
-     (Attribute "Key" _ PKey _ ) -> 
+     (Attribute "Key" _ PKey _ ) ->
         [ stCmtFunc ("Gets all `" ++ name ++ "` entities.")
             (mName, "queryAll" ++ name ++ "s") 0 Public
             (applyTC (mConn, "DBAction")
@@ -704,10 +703,10 @@ genEntryFuncs mName (Entity name attrs) =
                (applyF (mER, "getCondEntries") [constF endescr])]
         , stCmtFunc ("Gets a `" ++ name ++ "` entry by a given key.")
             (mName, "get" ++ name) 0 Public
-            (baseType (mName, name ++ "ID") ~> 
+            (baseType (mName, name ++ "ID") ~>
              applyTC (mConn, "DBAction") [baseType (mName, name)])
             [simpleRule []
-               (applyF (mER, "getEntryWithKey") 
+               (applyF (mER, "getEntryWithKey")
                   [ constF endescr
                   , constF (mName, lname ++ "ColumnKey")
                   , constF (mName, lname ++ "ID")])]
@@ -720,7 +719,7 @@ genEntryFuncs mName (Entity name attrs) =
                    (applyTC (mConn, "DBAction") [baseType (mName, name)])
                    (map (attr2NewCType mName name) (tail attrs)))
             [simpleRule (map cpvar args)
-               (applyF (mER, "insertNewEntry") 
+               (applyF (mER, "insertNewEntry")
                   [ constF endescr
                   , constF (mName, "set" ++ name ++ "Key")
                   , constF (mName, name ++ "ID")
@@ -730,10 +729,10 @@ genEntryFuncs mName (Entity name attrs) =
                   ])]
         , stCmtFunc ("Deletes an existing `" ++ name ++ "` entry by its key.")
             (mName, "delete" ++ name) 0 Public
-            (baseType (mName, name) ~> 
+            (baseType (mName, name) ~>
              applyTC (mConn, "DBAction") [unitType])
             [simpleRule []
-               (applyF (mER, "deleteEntry") 
+               (applyF (mER, "deleteEntry")
                   [ constF endescr
                   , constF (mName, lname ++ "ColumnKey")
                   , applyF (pre ".")
@@ -741,7 +740,7 @@ genEntryFuncs mName (Entity name attrs) =
                        constF (mName, lname ++ "Key")]])]
         , stCmtFunc ("Updates an existing `" ++ name ++ "` entry by its key.")
             (mName, "update" ++ name) 0 Public
-            (baseType (mName, name) ~> 
+            (baseType (mName, name) ~>
              applyTC (mConn, "DBAction") [unitType])
             [simpleRule []
                (applyF (mER, "updateEntry") [constF endescr ])]
@@ -755,7 +754,7 @@ genEntryFuncs mName (Entity name attrs) =
                    (applyTC (mConn, "DBAction") [unitType])
                    (map (getAttributeType mName name) attrs))
             [simpleRule (map cpvar args)
-               (applyF (mER, "insertEntry") 
+               (applyF (mER, "insertEntry")
                   [ constF endescr
                   , applyF (mName, name) (map cvar args)
                   ])]
@@ -765,7 +764,7 @@ genEntryFuncs mName (Entity name attrs) =
                    (applyTC (mConn, "DBAction") [unitType])
                    (map (getAttributeType mName name) attrs))
             [simpleRule (map cpvar args)
-               (applyF (mER, "deleteEntryR") 
+               (applyF (mER, "deleteEntryR")
                   (constF endescr : concatMap attr2args (zip attrs args)))]
          , case attrs of
              [Attribute aname1 (KeyDom adom1) _ _,
@@ -779,7 +778,7 @@ genEntryFuncs mName (Entity name attrs) =
                         [listType (baseType (mName,adom2))])
                [simpleRule [cpvar "en"]
                  (applyF (mER,">+=")
-                   [ applyF (mER, "getEntriesWithColVal") 
+                   [ applyF (mER, "getEntriesWithColVal")
                        [ constF endescr
                        , constF (mName, lname ++ "Column" ++ aname1)
                        , applyF (mName, firstLow adom1 ++ "ID")
@@ -797,7 +796,7 @@ genEntryFuncs mName (Entity name attrs) =
  where
   lname   = firstLow name
   endescr = (mName, lname ++ "_CDBI_Description")
-  
+
   attr2args (Attribute aname adom _ _, arg) =
     [ constF (mName, lname ++ "Column" ++ aname)
     , case adom of

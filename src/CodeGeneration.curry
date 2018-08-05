@@ -14,10 +14,10 @@ module CodeGeneration(Option,Storage(..),ConsistencyTest(..),
 import AbstractCurry.Types
 import AbstractCurry.Build
 import Database.ERD
-import List
-import Char
-import FiniteMap
-import Maybe
+import Data.List
+import Data.Char
+import Data.Maybe
+import qualified Data.Map as Map
 
 import Database.ERD.Goodies
 
@@ -42,26 +42,26 @@ keyDatabaseMod = "Database.KeyDatabaseSQLite"
 
 erd2code :: Option -> ERD -> CurryProg
 erd2code opt@(_, consistencyTest) (ERD n es rs) =
-  let imports = "ERDGeneric"  
+  let imports = "ERDGeneric"
               : keyDatabaseMod
-              : fmSortBy (<) (concatMap getImports es)
+              : Map.sortWithMap (concatMap getImports es)
       entities = filter (not . isGenerated) es
       generatedEntities = filter isGenerated es
   in
   CurryProg n
             imports Nothing [] []
-            (concatMap (entity2datatype opt n) entities 
+            (concatMap (entity2datatype opt n) entities
              ++ map (entity2datatypeKey opt n) entities
              ++ concatMap (generatedEntity2datatype opt n) generatedEntities)
             (generateStorageDefinition opt n
              ++ concatMap (entity2trans opt n) entities
-             ++ concatMap (generatedEntity2trans opt n) generatedEntities 
+             ++ concatMap (generatedEntity2trans opt n) generatedEntities
              ++ concatMap (entity2selmod opt n) es
              ++ concatMap (entity2DBcode opt n entities es rs) entities
              ++ concatMap (generatedEntity2DBcode opt n rs) generatedEntities
              ++ concatMap (rel2code opt n es) rs
              ++ (case consistencyTest of
-                  WithConsistencyTest -> 
+                  WithConsistencyTest ->
                     [checkAll n es]
                        ++ (map (\e -> checkEntity n e) es)
                        ++ (map (\e -> checkEntry n e es rs) es)
@@ -83,7 +83,7 @@ generateStorageDefinition (storage, _) n = case storage of
 generatedEntity2DBcode :: Option -> String -> [Relationship] -> Entity
                        -> [CFuncDecl]
 generatedEntity2DBcode (storage, _) name allrels
-                       (Entity en attrs@[Attribute a1 (KeyDom d1) _ _, 
+                       (Entity en attrs@[Attribute a1 (KeyDom d1) _ _,
                                          Attribute a2 (KeyDom d2) _ _]) =
   let enrels = relationshipsForEntityName en allrels
       d1rels = relationshipsForEntityName d1 enrels
@@ -107,9 +107,9 @@ generatedEntity2DBcode (storage, _) name allrels
      ("Dynamic predicate representing the "++en++" relation between "++
       d1++" entities and "++d2++" entities")
      (name, e) 2 Public
-     (emptyClassType ((baseType (name, d1++"Key")) ~> entityKeyType (name,d2) 
+     (emptyClassType ((baseType (name, d1++"Key")) ~> entityKeyType (name,d2)
                                                ~> (baseType (db "Dynamic"))))
-     [simpleRule [CPComb (name, d1++"Key") [cpvar "key1"], 
+     [simpleRule [CPComb (name, d1++"Key") [cpvar "key1"],
                   CPComb (name, d2++"Key") [cpvar "key2"]]
                  (applyF (name,e++"Entry")
                          [constF (pre "unknown"),
@@ -133,7 +133,7 @@ generatedEntity2DBcode (storage, _) name allrels
       d2++" entity")
      (name, "new"++en) 2 Public
      (emptyClassType
-        ((baseType (name, d1++"Key")) ~> (baseType (name, d2++"Key")) 
+        ((baseType (name, d1++"Key")) ~> (baseType (name, d2++"Key"))
                                       ~> transactType))
      [simpleRule [cpvar "key1", cpvar "key2"]
               (seqTrans
@@ -163,7 +163,7 @@ generatedEntity2DBcode (storage, _) name allrels
       d2++" entity")
      (name, "delete"++en) 2 Public
      (emptyClassType
-       ((baseType (name, d1++"Key")) ~> (baseType (name, d2++"Key")) 
+       ((baseType (name, d1++"Key")) ~> (baseType (name, d2++"Key"))
                                      ~> transactType))
      [simpleRule [cpvar "key1", cpvar "key2"]
                  (foldr (\a b -> applyF (db "|>>") [a,b]) deleteCall
@@ -194,22 +194,22 @@ generatedEntity2DBcode (storage, _) name allrels
   relToMaxTestA :: String -> Relationship -> CExpr
   relToMaxTestA vname (Relationship _ [REnd e1 _ _, REnd e2 _ c2]) =
     relToMinMaxTest "maxTestInsert"
-                    vname (cardMaximum c2) (combineIds [e1,e2,"Key"]) e2      
+                    vname (cardMaximum c2) (combineIds [e1,e2,"Key"]) e2
 
   relToMaxTestB :: String -> Relationship -> CExpr
   relToMaxTestB vname (Relationship _ [REnd e1 _ c1, REnd e2 _ _]) =
     relToMinMaxTest "maxTestInsert"
-                    vname (cardMaximum c1) (combineIds [e2,e1,"Key"]) e1  
+                    vname (cardMaximum c1) (combineIds [e2,e1,"Key"]) e1
 
   relToMinTestA :: String -> Relationship -> CExpr
   relToMinTestA vname (Relationship _ [REnd e1 _ _, REnd e2 _ c2]) =
     relToMinMaxTest "minTestDelete"
-                    vname (cardMinimum c2) (combineIds [e1,e2,"Key"]) e2      
+                    vname (cardMinimum c2) (combineIds [e1,e2,"Key"]) e2
 
   relToMinTestB :: String -> Relationship -> CExpr
   relToMinTestB vname (Relationship _ [REnd e1 _ c1, REnd e2 _ _]) =
     relToMinMaxTest "minTestDelete"
-                    vname (cardMinimum c1) (combineIds [e2,e1,"Key"]) e1  
+                    vname (cardMinimum c1) (combineIds [e2,e1,"Key"]) e1
 
   relToMinMaxTest :: String -> String -> Int -> String -> String -> CExpr
   relToMinMaxTest testname vname m attrName rName =
@@ -321,7 +321,7 @@ entity2datatypeKey _ ername (Entity name attrs) =
   where
     getKeyType :: [Attribute] -> CTypeExpr
     getKeyType [] = error "entity2datatypeKey: missing key!"
-    getKeyType (a@(Attribute _ _ key _) : atr) 
+    getKeyType (a@(Attribute _ _ key _) : atr)
       | key == PKey = attrType a
       | otherwise   = getKeyType atr
 
@@ -333,7 +333,7 @@ datatypeKey (s, name) argType =
 
 generatedEntity2datatype :: Option -> String -> Entity -> [CTypeDecl]
 generatedEntity2datatype _ n (Entity name attrs) =
-  [CType (n,name) Public [] 
+  [CType (n,name) Public []
          [simpleCCons (n,name) Private
                 (replicate (length attrs) (baseType (erdgen "Key")))] [],
    CTypeSyn (n,name++"Tuple") Private []
@@ -343,10 +343,10 @@ generatedEntity2datatype _ n (Entity name attrs) =
 ---------------------------------------------------------------
 -- Generate getter + setter operations for an entity:
 ---------------------------------------------------------------
-entity2selmod :: Option -> String -> Entity -> [CFuncDecl]  
+entity2selmod :: Option -> String -> Entity -> [CFuncDecl]
 entity2selmod _ ername (Entity name attrs) =
-  f (ername, name) 
-    (length attrs) 
+  f (ername, name)
+    (length attrs)
     1
     attrNames
     (map ((\y -> (ername,y)) . ((lowerFirst name) ++)) attrNames)
@@ -379,24 +379,24 @@ entity2selmod _ ername (Entity name attrs) =
     getNull (Attribute _ t _ null) = null && not (isStringDom t)
 
     isPKey :: Attribute -> Bool
-    isPKey (Attribute _ _ key _) = key == PKey 
+    isPKey (Attribute _ _ key _) = key == PKey
 
     getFKeyDom :: Attribute -> String
     getFKeyDom (Attribute _ t _ _) =
       case t of KeyDom kd -> kd
-                _         -> "" 
+                _         -> ""
 
     f :: QName -> Int -> Int -> [String]
         -> [QName] -> [QName] -> [QName]
         -> [Bool] -> [Bool] -> [String] -> [CFuncDecl]
     f _ _ _ [] [] [] [] [] [] [] = []
     f n l nth (attr:attrnames) (s:selnames) (m:modnames) (t:types)
-              (null:nulls) (key:keys) (fkeydom:fkeydoms) 
+              (null:nulls) (key:keys) (fkeydom:fkeydoms)
       --| fkey      = (selector n l nth s t null Private) :
-      --              (f n l (nth+1) selnames modnames types nulls keys fkeys)             
+      --              (f n l (nth+1) selnames modnames types nulls keys fkeys)
       | key       = (mutator n l nth attr m t null Private fkeydom)
          : (f n l (nth+1) attrnames selnames modnames types nulls keys fkeydoms)
-      | otherwise = (selector n l nth attr s t null Public fkeydom) 
+      | otherwise = (selector n l nth attr s t null Public fkeydom)
          : (mutator n l nth attr m t null Public fkeydom)
          : (f n l (nth+1) attrnames selnames modnames types nulls keys fkeydoms)
 
@@ -404,28 +404,28 @@ entity2selmod _ ername (Entity name attrs) =
 -- enAttrName (EN x _ ... _) = x
 selector :: QName -> Int -> Int -> String -> QName -> QName -> Bool
          -> CVisibility -> String -> CFuncDecl
-selector consname arity nth attr selname nthType isnull v fKeyDom = 
+selector consname arity nth attr selname nthType isnull v fKeyDom =
   cmtfunc
     ("Gets the value of attribute \""++attr++"\" of a "++snd consname++
      " entity.")
     selname 1 v (emptyClassType selType)
     (if null fKeyDom
      then [simpleRule
-             [CPComb consname (replace x (nth-1) (replicate arity nix))] 
+             [CPComb consname (replace x (nth-1) (replicate arity nix))]
              (cvar "x")]
      else
       if isnull
       then [simpleRule [CPComb consname (replace (CPComb (pre "Nothing") [])
                                                  (nth-1)
-                                                 (replicate arity nix))] 
+                                                 (replicate arity nix))]
                        (constF (pre "Nothing")),
             simpleRule [CPComb consname (replace (CPComb (pre "Just") [x])
                                                  (nth-1)
-                                                 (replicate arity nix))] 
+                                                 (replicate arity nix))]
                        (applyJust
                              (applyF (fst selname,fKeyDom++"Key") [cvar "x"]))]
       else [simpleRule
-              [CPComb consname (replace x (nth-1) (replicate arity nix))] 
+              [CPComb consname (replace x (nth-1) (replicate arity nix))]
               (applyF (fst selname,fKeyDom++"Key") [cvar "x"])])
   where
     selType =
@@ -453,7 +453,7 @@ mutator consname arity nth attr modname nthType isnull v fKeyDom =
                               (map (\i->cvar ("x"++show i)) [1..arity])))]
   where
     modType typeCons typeArg n
-      | n         = (baseType typeCons) ~> maybeType (baseType typeArg) 
+      | n         = (baseType typeCons) ~> maybeType (baseType typeArg)
                                       ~> baseType typeCons
       | otherwise = (baseType typeCons) ~> (baseType typeArg) ~> (baseType typeCons)
 
@@ -472,14 +472,14 @@ entityKey (s,eName) attrs v =
     ("Gets the key of a "++eName++" entity.")
     (s,(lowerFirst eName) ++ "Key") 1 v
     (emptyClassType ((baseType (s,eName)) ~> (baseType (s,eName ++ "Key"))))
-    [simpleRule [CPComb (s,eName) 
-                        (replace x (key attrs) 
+    [simpleRule [CPComb (s,eName)
+                        (replace x (key attrs)
                                  (replicate (length attrs) nix))]
                 (applyF (s, eName ++ "Key") [cvar "x"])]
-  where 
+  where
     key :: [Attribute] -> Int
-    key ((Attribute _ _ k _) : ats) 
-      | k == PKey = 0 
+    key ((Attribute _ _ k _) : ats)
+      | k == PKey = 0
       | otherwise = 1 + key ats
 
 -- Generate "show" function for database keys.
@@ -541,7 +541,7 @@ pred (s,eName) _ v = let ename = lowerFirst eName in
   cmtfunc
     ("Dynamic predicate representing the relation\nbetween keys and "++eName++
      " entities.")
-    (s,ename) 1 v 
+    (s,ename) 1 v
     (emptyClassType (baseType (s,eName++"Key")
                      ~> baseType (s,eName) ~> baseType (db "Dynamic")))
     [CRule [cpvar "key",cpvar "obj"]
@@ -563,11 +563,11 @@ predEntry (s, eName) v dbpath =
   cmtfunc
     ("Database predicate representing the relation between keys and "++eName++
      " tuple entities.")
-    (s,(lowerFirst eName) ++ "Entry") 2 v 
+    (s,(lowerFirst eName) ++ "Entry") 2 v
     (emptyClassType (baseType (erdgen "Key") ~> baseType (s,eName++"Tuple")
                      ~> baseType (db "Dynamic")))
     [simpleRule []
-             (applyF (db "persistent") 
+             (applyF (db "persistent")
                      [cvar ("\"file:" ++ dbpath ++ "/" ++ eName ++ "DB\"")])]
 
 -- Generate persistent dynamic predicate for an entity using DB implementation
@@ -578,25 +578,25 @@ predEntry1 :: QName -> CVisibility -> CFuncDecl
 predEntry1 (s, eName) v =
   cmtfunc
     ("Database predicate representing "++eName++" entities.")
-    (s,(lowerFirst eName) ++ "Entry") 1 v 
+    (s,(lowerFirst eName) ++ "Entry") 1 v
     (emptyClassType (baseType (s,eName) ~> baseType (db "Dynamic")))
     [simpleRule []
-       (applyF (db "persistent1") 
+       (applyF (db "persistent1")
                [cvar ("\"db:" ++ eName ++ "DB\""),
                 CSymbol (s, (lowerFirst eName) ++ "Spec")])]
 
 entitySpec :: QName -> [Attribute] -> CVisibility -> CFuncDecl
-entitySpec (s,eName) attrs v = 
+entitySpec (s,eName) attrs v =
   cfunc (s,(lowerFirst eName) ++ "Spec") 0 v
         (emptyClassType (applyTC (db "DBSpec") [baseType (s,eName)]))
         [simpleRule [] (applyCons (s, eName) (length attrs) (reverse attrs))]
-  where 
+  where
     applyCons :: QName -> Int -> [Attribute] -> CExpr
     applyCons (m, cons) i [] = applyF (db ("cons" ++ show i))
                                       [CSymbol (m, cons)]
     applyCons (m, cons) i ((Attribute n d _ _):ats) =
       CApply (applyCons (m, cons) i ats)
-             (applyF (db (typeF d)) [cvar ("\""++n++"\"")])  
+             (applyF (db (typeF d)) [cvar ("\""++n++"\"")])
 
     typeF :: Domain -> String
     typeF (IntDom _) = "int"
@@ -605,14 +605,14 @@ entitySpec (s,eName) attrs v =
     typeF (BoolDom _) = "bool"
     typeF (DateDom _) = "date"
     typeF (KeyDom _) = "int"
-    typeF (UserDefined str _) = 
+    typeF (UserDefined str _) =
        let (m,f) = userMod str
         in m ++ "." ++ lowerFirst f
 
 -- Generate persistent dynamic predicate for an entity using SQLite3 DB
 -- of Sebastian Fischer's KeyDatabase module.
 predEntrySQLite :: QName -> [Attribute] -> CVisibility -> String -> CFuncDecl
-predEntrySQLite (s,eName) attrs v _ = 
+predEntrySQLite (s,eName) attrs v _ =
   cmtfunc
     ("Database predicate representing the relation between keys and "++eName++
      " tuple entities.")
@@ -620,12 +620,12 @@ predEntrySQLite (s,eName) attrs v _ =
     (emptyClassType
       (baseType (erdgen "Key") ~> baseType (s,eName++"Tuple")
        ~> baseType (db "Dynamic")))
-    [simpleRule [] 
+    [simpleRule []
                (applyF (db "persistentSQLite")
                   [constF (s,"dbFile"),
                    string2ac eName,
                    list2ac (map att2string attrs)])]
-  where 
+  where
     att2string :: Attribute -> CExpr
     att2string (Attribute n _ _ _) = string2ac n
 
@@ -674,7 +674,7 @@ getEntity (s,eName) v =
 -------------------------------------------------------------------
 entity2DBcode :: Option -> String -> [Entity] -> [Entity] -> [Relationship]
               -> Entity -> [CFuncDecl]
-entity2DBcode (storage,_) ername es esAll rsAll e@(Entity name attrs) = 
+entity2DBcode (storage,_) ername es esAll rsAll e@(Entity name attrs) =
   let n = (ername, name)
   in
   (case storage of Files dbpath  -> [predEntry n Private dbpath]
@@ -703,7 +703,7 @@ entity2DBcode (storage,_) ername es esAll rsAll e@(Entity name attrs) =
 -- vis: visibility
 -- allens: all entities
 -- allrels: all relationships
-newEntity :: QName -> [Attribute] -> [Entity] -> [Relationship] -> CVisibility 
+newEntity :: QName -> [Attribute] -> [Entity] -> [Relationship] -> CVisibility
          -> [Entity] -> [Relationship] -> CFuncDecl
 newEntity (str,eName) attrs ens rels v esAll rsAll =
   let e = lowerFirst eName
@@ -721,13 +721,13 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
       exactP = duplicate exactRs (map (("k"++) . show) [1 .. length exactRs])
       maxP = map (("ks"++) . show)
                  [length exactRs + 1 .. length (exactRs ++ maxRs)]
-      minMaxP = duplicate' minMaxRs 
+      minMaxP = duplicate' minMaxRs
                   (map (("k" ++) . show) [length (exactRs ++ maxRs) + 1 .. l])
                   (map (("ks"++) . show) [length (exactRs ++ maxRs) + 1 .. l])
       parameter = attributeP ++ exactP ++ maxP ++ minMaxP
-                  
+
       ts = tests (str,eName) ens rels
-                 (New exactRs exactP maxRs maxP minMaxRs minMaxP rsAll) 
+                 (New exactRs exactP maxRs maxP minMaxRs minMaxP rsAll)
 
       entryCall =
           applyF (erdgen "newEntry")
@@ -757,11 +757,11 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
            then entryCall
            else applyF (db "|>>=")
                   [entryCall,
-                   CLambda 
+                   CLambda
                      [cpvar "entry"]
                      (foldr
                         (\a b -> applyF (db "|>>") [a,b])
-                        (applyF (db "returnT") [cvar "entry"]) 
+                        (applyF (db "returnT") [cvar "entry"])
                         (newEntryExact exactRs exactP (str,e) esAll rsAll ++
                          newEntryMax maxRs maxP (str,e) esAll rsAll ++
                          newEntryMinMax minMaxRs minMaxP (str,e) esAll rsAll))])
@@ -775,9 +775,9 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
 
    correctOrder :: String -> String -> [Entity] -> Bool
    correctOrder _ _ [] = error "entity not found" --False
-   correctOrder en en1 (Entity name atts :es) 
+   correctOrder en en1 (Entity name atts :es)
      | en == name = case atts of
-         [Attribute _ (KeyDom e1) _ _, _] -> e1==en1 
+         [Attribute _ (KeyDom e1) _ _, _] -> e1==en1
          [_, Attribute _ (KeyDom _) _ _] -> False
          _                                -> error "correctOrder: wrong attributes"
      | otherwise = correctOrder en en1 es
@@ -792,16 +792,16 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
            (find (\e -> entityName e == derivedename) allens)
 
    newEntryExact [] _ _ _ _ = []
-   newEntryExact (Relationship _ [REnd en _ _, REnd rn _ (Exactly i)]:exactRs) exactP (s,e) es rs = 
+   newEntryExact (Relationship _ [REnd en _ _, REnd rn _ (Exactly i)]:exactRs) exactP (s,e) es rs =
      let (ip,restp) = splitAt i exactP
          (d1,d2) = lcDomainsOfRelEntity es rn
      in
-     (map (\p -> applyF (erdgen "newEntryR") 
+     (map (\p -> applyF (erdgen "newEntryR")
                         (if correctOrder rn en es
                          then [constF (s, lowerFirst rn++"Entry"),
                                applyF (s,d1++"KeyToKey")
-                                      [applyF (s,e++"Key") [cvar "entry"]], 
-                               applyF (s,d2++"KeyToKey") [cvar p]] 
+                                      [applyF (s,e++"Key") [cvar "entry"]],
+                               applyF (s,d2++"KeyToKey") [cvar p]]
                          else [constF (s,lowerFirst rn++"Entry"),
                                applyF (s,d1++"KeyToKey") [cvar p],
                                applyF (s,d2++"KeyToKey")
@@ -810,7 +810,7 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
        ++ (newEntryExact exactRs restp (s,e) es rs)
 
    newEntryMax [] _ _ _ _ = []
-   newEntryMax (Relationship _ [REnd en _ _, REnd rn _ _]:maxRs) (p:maxP) (s,e) es rs = 
+   newEntryMax (Relationship _ [REnd en _ _, REnd rn _ _]:maxRs) (p:maxP) (s,e) es rs =
      let (d1,d2) = lcDomainsOfRelEntity es rn
      in
      [applyF (pre "mapT_")
@@ -819,27 +819,27 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
                               (if correctOrder rn en es
                                then [constF (s, lowerFirst rn++"Entry"),
                                      applyF (s,d1++"KeyToKey")
-                                       [applyF (s,e++"Key") [cvar "entry"]], 
-                                     applyF (s,d2++"KeyToKey") [cvar "a"]] 
+                                       [applyF (s,e++"Key") [cvar "entry"]],
+                                     applyF (s,d2++"KeyToKey") [cvar "a"]]
                                else [constF (s, lowerFirst rn++"Entry"),
                                      applyF (s,d1++"KeyToKey") [cvar "a"],
                                      applyF (s,d2++"KeyToKey")
                                        [applyF (s,e++"Key") [cvar "entry"]]])),
               cvar p]]
         ++ newEntryMax maxRs maxP (s,e) es rs
-  
+
    newEntryMinMax [] _ _ _ _ = []
    newEntryMinMax
           (Relationship _ [REnd en _ _, REnd rn _ (Between i _)] : minMaxRs)
-          minMaxP (s,e) es rs = 
+          minMaxP (s,e) es rs =
      let (ip,(p:restp)) = splitAt i minMaxP
          (d1,d2) = lcDomainsOfRelEntity es rn
      in
-     (map (\a -> applyF (erdgen "newEntryR") 
+     (map (\a -> applyF (erdgen "newEntryR")
                         (if correctOrder rn en es
                          then [constF (s, lowerFirst rn++"Entry"),
                                applyF (s,d1++"KeyToKey")
-                                      [applyF (s,e++"Key") [cvar "entry"]], 
+                                      [applyF (s,e++"Key") [cvar "entry"]],
                                applyF (s,d2++"KeyToKey") [cvar a]]
                          else [constF (s, lowerFirst rn++"Entry"),
                                applyF (s,d1++"KeyToKey") [cvar a],
@@ -853,7 +853,7 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
                                then [constF (s, lowerFirst rn++"Entry"),
                                      applyF (s,d1++"KeyToKey")
                                        [applyF (s,e++"Key") [cvar "entry"]],
-                                     applyF (s,d2++"KeyToKey") [cvar "a"]] 
+                                     applyF (s,d2++"KeyToKey") [cvar "a"]]
                                else [constF (s, lowerFirst rn++"Entry"),
                                      applyF (s,d1++"KeyToKey") [cvar "a"],
                                      applyF (s,d2++"KeyToKey")
@@ -882,19 +882,19 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
 
    newType :: QName -> [Attribute] -> [Relationship] -> [Relationship]
              -> [Relationship] -> [Relationship] -> CTypeExpr
-   newType (m,n) [] exactRs maxRs minMaxRs rs 
-     | null exactRs && null maxRs && null minMaxRs = applyTC transTC [baseType (m,n)] 
+   newType (m,n) [] exactRs maxRs minMaxRs rs
+     | null exactRs && null maxRs && null minMaxRs = applyTC transTC [baseType (m,n)]
      | length exactRs > 0 = nTExact (m,n) exactRs maxRs minMaxRs rs
      | length maxRs > 0 = nTMax (m,n) maxRs minMaxRs rs
      | otherwise = nTMinMax (m,n) minMaxRs rs
-   newType n (a@(Attribute _ d _ nu):ats) exactRs maxRs minMaxRs rs = 
-     let t = case d of KeyDom s -> if nu 
+   newType n (a@(Attribute _ d _ nu):ats) exactRs maxRs minMaxRs rs =
+     let t = case d of KeyDom s -> if nu
                                    then maybeType (ctvar (s++"Key"))
                                    else ctvar (s++"Key")
-                       _        -> attrTypeNew a 
+                       _        -> attrTypeNew a
      in
-     CFuncType t  (newType n ats exactRs maxRs minMaxRs rs) 
-   
+     CFuncType t  (newType n ats exactRs maxRs minMaxRs rs)
+
    nTExact (m,n) [] maxRs minMaxRs rs = nTMax (m,n) maxRs minMaxRs rs
    nTExact (m,n) (Relationship _ [REnd en1 _ _, REnd en2 _ (Exactly e)]:exactRs) maxRs minMaxRs rs =
      let keyType = (startsIn en1 en2 rs) ++ "Key"
@@ -905,18 +905,18 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
    nTMax (m,n) (Relationship _ [REnd en1 _ _, REnd en2 _ _]:maxRs) minMaxRs rs =
      let keyType = (startsIn en1 en2 rs) ++ "Key"
      in
-     (listType (ctvar keyType)) ~> (nTMax (m,n) maxRs minMaxRs rs) 
+     (listType (ctvar keyType)) ~> (nTMax (m,n) maxRs minMaxRs rs)
 
-   nTMinMax (m,n) [] _ = applyTC transTC [baseType (m,n)] 
+   nTMinMax (m,n) [] _ = applyTC transTC [baseType (m,n)]
    nTMinMax (m,n) (Relationship _ [REnd en1 _ _,REnd en2 _ (Between min _)]:minMaxRs) rs =
      let keyType = (startsIn en1 en2 rs) ++ "Key"
      in
-     foldr (~>) (nTMinMax (m,n) minMaxRs rs) 
+     foldr (~>) (nTMinMax (m,n) minMaxRs rs)
            ((replicate min (ctvar keyType)) ++ [listType (ctvar keyType)])
 
    startsIn :: String -> String -> [Relationship] -> String
    startsIn _ _ [] = error "missing relationship"
-   startsIn n en (Relationship _ [REnd en1 _ _, REnd en2 _ _]:rs) 
+   startsIn n en (Relationship _ [REnd en1 _ _, REnd en2 _ _]:rs)
      | en == en2 && en1 /= n = en1
      | otherwise = startsIn n en rs
 
@@ -925,7 +925,7 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
      KeyDom s -> applyF (name, if isnull then "maybe"++s++"KeyToKey"
                                          else lowerFirst s++"KeyToKey")
                         [cvar p]
-     _  -> if hasDefault d 
+     _  -> if hasDefault d
            then let defaultmaybe = if isStringDom d
                                    then applyF (erdgen "defaultString")
                                                [getDefault d, cvar p]
@@ -938,9 +938,9 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
 
    -- Maybe if null values allowed or default values provided
    -- (except for string types!)
-   attrTypeNew :: Attribute -> CTypeExpr  
+   attrTypeNew :: Attribute -> CTypeExpr
    attrTypeNew (Attribute _ t k False) =
-     case t of (IntDom Nothing)        -> if k==PKey 
+     case t of (IntDom Nothing)        -> if k==PKey
                                           then baseType (erdgen "Key")
                                           else intType
                (IntDom (Just _))       -> maybeType intType
@@ -956,8 +956,8 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
                (UserDefined s Nothing) -> baseType (userMod s)
                (UserDefined s (Just _))-> maybeType (baseType (userMod s))
                (KeyDom _)              -> baseType (erdgen "Key")
-   attrTypeNew (Attribute _ t k True) = 
-     case t of (IntDom _)       -> if k==PKey 
+   attrTypeNew (Attribute _ t k True) =
+     case t of (IntDom _)       -> if k==PKey
                                    then maybeType (baseType (erdgen "Key"))
                                    else maybeType intType
                (FloatDom _)     -> maybeType floatType
@@ -966,7 +966,7 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
                (DateDom _)      -> maybeType (baseType ("Time","CalendarTime"))
                (UserDefined s _)-> maybeType (baseType (userMod s))
                (KeyDom _)       -> maybeType (baseType (erdgen "Key"))
-          
+
 
 updateEntity :: QName -> [Entity] -> [Relationship] -> CVisibility -> CFuncDecl
 updateEntity (s,eName) es rs v =
@@ -1001,17 +1001,17 @@ deleteEntity (s,eName) es esAll rsAll v =
         [simpleRule [cpvar p] (foldr (\a b -> applyF (db "|>>") [a,b]) f ts)]
 
 data TestType = New [Relationship] [String] [Relationship] [String] [Relationship] [String] [Relationship]
-              | Update 
+              | Update
               | Delete [Entity]
               | Consistency
 
 tests :: QName -> [Entity] -> [Relationship] -> TestType -> [CExpr]
-tests (str,enName) entities rels tt = 
+tests (str,enName) entities rels tt =
   let entity  = head (filter (isEntityNamed enName) entities)
       uas     = filter isUnique (entityAttributes entity)
       fkas    = filter isForeignKey (entityAttributes entity)
       ers     = relationshipsForEntityName (entityName entity) rels
-      maxrsA  = filter (isMaxRelForEntityA enName) ers 
+      maxrsA  = filter (isMaxRelForEntityA enName) ers
       maxrsB  = filter (isMaxRelForEntityB enName) ers
       maxrsAC = filter (isMaxRelForEntityAC enName) ers
       maxrsBC = filter (isMaxRelForEntityBC enName) ers
@@ -1052,7 +1052,7 @@ tests (str,enName) entities rels tt =
   where
     startsIn :: String -> String -> [Relationship] -> String
     startsIn _ _ [] = error "missing relationship"
-    startsIn n en (Relationship _ [REnd en1 _ _, REnd en2 _ _]:rs) 
+    startsIn n en (Relationship _ [REnd en1 _ _, REnd en2 _ _]:rs)
       | en == en2 && n/=en1 = en1
       | otherwise = startsIn n en rs
 
@@ -1066,7 +1066,7 @@ tests (str,enName) entities rels tt =
                     (constF (pre "[]"))
                     (map cvar ip)]
         : dupTestExact exactRs restp
-   
+
     dupTestMax :: [String] -> [CExpr]
     dupTestMax [] = []
     dupTestMax (p:maxP) =
@@ -1097,7 +1097,7 @@ tests (str,enName) entities rels tt =
       in
       applyF (erdgen "maxPTest") [CLit (CIntc (max-min)), cvar p]
         : maxTestMinMax minMaxRs restp
-   
+
 
     fKeyExistExact :: [Relationship] -> [String] -> String -> [Relationship]-> [CExpr]
     fKeyExistExact [] _ _ _ = []
@@ -1114,17 +1114,17 @@ tests (str,enName) entities rels tt =
       in
       applyF (pre "mapT_") [existsDBKeyCall (s,eN) Nothing, cvar p]
         : fKeyExistMax maxRs maxP s rs
- 
+
     fKeyExistMinMax :: [Relationship] -> [String] -> String -> [Relationship]-> [CExpr]
     fKeyExistMinMax [] _ _ _ = []
     fKeyExistMinMax (Relationship _ [REnd n _ _, REnd rn _ (Between i _)]:minMaxRs) minMaxP s rs =
       let (ip, (p:restp)) = splitAt i minMaxP
           eN = startsIn n rn rs
       in
-      (map (\v -> existsDBKeyCall (s,eN) (Just (cvar v))) ip)    
-        ++ [applyF (pre "mapT_") [existsDBKeyCall (s,eN) Nothing, cvar p]]    
+      (map (\v -> existsDBKeyCall (s,eN) (Just (cvar v))) ip)
+        ++ [applyF (pre "mapT_") [existsDBKeyCall (s,eN) Nothing, cvar p]]
         ++ (fKeyExistMinMax minMaxRs restp s rs)
-              
+
 
     isUnique :: Attribute -> Bool
     isUnique (Attribute _ _ k _) = k == Unique
@@ -1162,7 +1162,7 @@ tests (str,enName) entities rels tt =
     fKeyExistTestUpdate :: QName -> Attribute -> CExpr
     fKeyExistTestUpdate (s,eName) (Attribute an (KeyDom kd) _ isnull) =
       let existsKeyCall = existsDBKeyCall (s,kd)
-          keyarg = applyF (s,lowerFirst eName ++ an) 
+          keyarg = applyF (s,lowerFirst eName ++ an)
                           [cvar (lowerFirst eName ++"_p")]
        in if isnull
           then applyMaybe (constF (db "doneT")) (existsKeyCall Nothing) keyarg
@@ -1172,7 +1172,7 @@ tests (str,enName) entities rels tt =
     fKeyExistTestDelete (s,eName) (Entity feName attrs) =
       let fkattrs = map (\a -> (attributeName a, isNullAttribute a))
                         (foreignKeyAttributes eName attrs)
-          fkarg = applyF (s,lowerFirst eName++"Key") 
+          fkarg = applyF (s,lowerFirst eName++"Key")
                          [cvar (lowerFirst eName ++"_p")]
        in seqTrans (map (\ (fkaName,fkisnull) ->
                            applyF (erdgen "requiredForeignDBKey")
@@ -1211,13 +1211,13 @@ tests (str,enName) entities rels tt =
               cvar (ename++"_p")]
 
     {- different unique for update,
-       and instead of cvar (lowerFirst an ++"_p") : 
+       and instead of cvar (lowerFirst an ++"_p") :
        applyF (s, lowerFirst eName ++an) [cvar (lowerFirst eName++"_p")]-}
 
     attributeToUniqueTestC :: QName -> Attribute -> CExpr
     attributeToUniqueTestC (s,eName) (Attribute an _ _ _) =
       let ename = lowerFirst eName in
-      applyF (erdgen "uniqueC") 
+      applyF (erdgen "uniqueC")
              [string2ac s,
               CSymbol (s,ename++"Entry"),
               CSymbol (s,"keytuple2"++eName),
@@ -1240,9 +1240,9 @@ tests (str,enName) entities rels tt =
               CSymbol (s,ename++"Entry"),
               CSymbol (s,"keytuple2"++ename),
               CSymbol (s,ename++attrName),
-              CLit (CIntc m), 
+              CLit (CIntc m),
               cvar (lowerFirst attrName++"_p")]
-      
+
     relToMaxTestUpdateA :: QName -> Relationship -> CExpr
     relToMaxTestUpdateA (s,eName) (Relationship rn [REnd _ _ c1, REnd e2 _ _]) =
       relToMaxTestUpdate (s,eName) (cardMaximum c1) (combineIds [e2,rn,"Key"])
@@ -1267,13 +1267,13 @@ tests (str,enName) entities rels tt =
     relToMaxTestAC (s,eName) (Relationship _ [REnd e1 _ _, REnd e2 _ c2]) =
       relToMaxTestC (s,eName)
                     (cardMaximum c2)
-                    (combineIds [e1,e2,"Key"])         
-                    e2        
+                    (combineIds [e1,e2,"Key"])
+                    e2
     relToMaxTestBC :: QName -> Relationship -> CExpr
     relToMaxTestBC (s,eName) (Relationship _ [REnd e1 _ c1, REnd e2 _ _]) =
       relToMaxTestC (s,eName)
                     (cardMaximum c1)
-                    (combineIds [e2,e1,"Key"])         
+                    (combineIds [e2,e1,"Key"])
                     e1
     relToMaxTestC :: QName -> Int -> String -> String -> CExpr
     relToMaxTestC (s,eName) m attrName eN =
@@ -1283,12 +1283,12 @@ tests (str,enName) entities rels tt =
               CSymbol (s,en++"Entry"),
               CSymbol (s,"keytuple2"++eN),
               CSymbol (s,en++attrName),
-              CLit (CIntc m), 
+              CLit (CIntc m),
               applyF (s, lowerFirst eName ++ "Key")
                      [cvar (lowerFirst eName++"_p")]]
 
     dupKeyTest :: QName -> CExpr
-    dupKeyTest (s,eName) = 
+    dupKeyTest (s,eName) =
       applyF (erdgen "duplicateKeyTest")
              [CSymbol (s, lowerFirst eName ++"Entry")]
 
@@ -1312,7 +1312,7 @@ tests (str,enName) entities rels tt =
               CSymbol (s,en++"Entry"),
               CSymbol (s,"keytuple2"++eN),
               CSymbol (s,en++attrName),
-              CLit (CIntc m), 
+              CLit (CIntc m),
               applyF (s, lowerFirst eName ++ "Key")
                      [cvar (lowerFirst eName++"_p")]]
 
@@ -1320,8 +1320,8 @@ tests (str,enName) entities rels tt =
 ------------------------------------------------------------------
 -- Generation of dynamic predicates for relationships
 rel2code :: Option -> String -> [Entity] -> Relationship -> [CFuncDecl]
-rel2code option name es r = 
-  if isGeneratedR r 
+rel2code option name es r =
+  if isGeneratedR r
   then rolesR option name r es
   else roles name r
 
@@ -1348,9 +1348,9 @@ rolesR option name (Relationship _ [REnd e1 _ _, REnd e2 r2 c2]) es =
             f = if f1 == e1 then f2 else f1
         in
         [cmtfunc rolecmt
-          (name, r2) (i+1) Public 
+          (name, r2) (i+1) Public
           (emptyClassType
-            ((baseType (name, e1++"Key")) 
+            ((baseType (name, e1++"Key"))
                ~> (foldr (\a b -> a ~> b)
                         (baseType (db "Dynamic"))
                         (replicate i (baseType (name, f++"Key"))))))
@@ -1358,12 +1358,12 @@ rolesR option name (Relationship _ [REnd e1 _ _, REnd e2 r2 c2]) es =
               (applyF (db "|>")
                  [foldr1 (\a b -> applyF (db "<>") [a,b])
                          (map ((\k -> applyF (name, lowerFirst e2)
-                                             [k, cvar "key"]) . 
-                                    cvar . ("key"++) . show) 
+                                             [k, cvar "key"]) .
+                                    cvar . ("key"++) . show)
                               [1..i]),
-                  foldr1 (\a b -> applyF (pre "&&") [a,b]) 
-                         (map (\ (a,b) -> 
-                                  applyF (pre "/=") 
+                  foldr1 (\a b -> applyF (pre "&&") [a,b])
+                         (map (\ (a,b) ->
+                                  applyF (pre "/=")
                                          (map (cvar . ("key"++) . show) [a,b]))
                               [(a,b) | a <- [1..i], b <- [a ..i], a /= b])])]]
   else if (f1 == e1)
@@ -1379,17 +1379,17 @@ rolesR option name (Relationship _ [REnd e1 _ _, REnd e2 r2 c2]) es =
               [simpleRule []
                      (applyF (pre "flip") [CSymbol (name, lowerFirst e2)])]]
   where
-    exact (Exactly i) = i      
-    
+    exact (Exactly i) = i
+
     nthFK :: Int -> Entity -> EName
     nthFK _ (Entity _ []) = error "Keine Fremdschluessel mehr vorhanden"
-    nthFK nth (Entity n ((Attribute _ t  _ _):attrs)) = 
-       case t of KeyDom ename -> if nth == 1 
+    nthFK nth (Entity n ((Attribute _ t  _ _):attrs)) =
+       case t of KeyDom ename -> if nth == 1
                                  then ename
                                  else nthFK (nth-1) (Entity n attrs)
                  _            -> nthFK nth (Entity n attrs)
-          
-    
+
+
 
 -- generate code for a relationship that is implemented by a foreign key
 roles :: String -> Relationship -> [CFuncDecl]
@@ -1424,7 +1424,7 @@ roles name (Relationship rname [REnd en1 role1 range1, REnd en2 role2 range2]) =
    cmtfunc
      ("Dynamic predicate representing role \""++role2++"\".")
      (name, role2) 2 Public rtype
-     [simpleRule [] (CSymbol (name, lowerFirst rname))],    
+     [simpleRule [] (CSymbol (name, lowerFirst rname))],
    cmtfunc
     ("Dynamic predicate representing role \""++role2++"\".")
      (name, role1) 2 Public
@@ -1436,10 +1436,10 @@ roles name (Relationship rname [REnd en1 role1 range1, REnd en2 role2 range2]) =
   isNullRange range = case range of
     (Between 0 _) -> True
     _             -> False
-    
+
   isExactRange range = case range of
     (Exactly _) -> True
-    _           -> False          
+    _           -> False
 
 relationshipsForEntityName :: String -> [Relationship] -> [Relationship]
 relationshipsForEntityName ename rels = filter endsIn rels
@@ -1456,8 +1456,8 @@ notPKey (Attribute _ _ k _) = k /= PKey
 
 attrType :: Attribute -> CTypeExpr         -- Null: Maybe
 attrType (Attribute _ t k False) =
-  case t of (IntDom _)       -> if k==PKey 
-                                then baseType (erdgen "Key") 
+  case t of (IntDom _)       -> if k==PKey
+                                then baseType (erdgen "Key")
                                 else intType
             (FloatDom _)     -> floatType
             (StringDom _ )   -> stringType
@@ -1466,8 +1466,8 @@ attrType (Attribute _ t k False) =
             (UserDefined s _)-> baseType (userMod s)
             (KeyDom _)       -> baseType (erdgen "Key")
             _                -> intType
-attrType (Attribute _ t k True) = 
-  case t of (IntDom _)       -> if k==PKey 
+attrType (Attribute _ t k True) =
+  case t of (IntDom _)       -> if k==PKey
                                 then maybeType (baseType (erdgen "Key"))
                                 else maybeType intType
             (FloatDom _)     -> maybeType floatType
@@ -1484,7 +1484,7 @@ attrType (Attribute _ t k True) =
 -- Generation of operations for global consistency tests
 
 checkAll :: String -> [Entity] -> CFuncDecl
-checkAll name es = 
+checkAll name es =
   cmtfunc "Checks the consistency of the complete database."
           (name, "checkAllData") 0 Public
           (emptyClassType transactType)
@@ -1527,13 +1527,13 @@ checkEntry name entity@(Entity en _) es rs =
                                else seqTrans t)]
 
 generatedEntityTests :: String -> Entity -> [CExpr]
-generatedEntityTests name (Entity en [Attribute a1 (KeyDom d1) _ _, 
+generatedEntityTests name (Entity en [Attribute a1 (KeyDom d1) _ _,
                                       Attribute a2 (KeyDom d2) _ _]) =
   let e = lowerFirst en
   in
   [existsDBKeyCall (name,d1)
                    (Just (applyF (name, e++a1) [cvar (e++"_p")])),
-   existsDBKeyCall (name,d2) 
+   existsDBKeyCall (name,d2)
                    (Just (applyF (name, e++a2) [cvar (e++"_p")])),
    applyF (erdgen "unique2C")
           [CSymbol (name, e++"Entry"),
@@ -1547,7 +1547,7 @@ generatedEntityTests name (Entity en [Attribute a1 (KeyDom d1) _ _,
 -- functions for saving and restoring all data
 
 saveAll :: String -> [Entity] -> [Entity] -> CFuncDecl
-saveAll name entities relentities = 
+saveAll name entities relentities =
   cmtfunc ("Saves the complete database as Curry terms.\n"++
            "The first argument is the directory where the term files should be stored.")
    (name, "saveAllData") 0 Public
@@ -1564,7 +1564,7 @@ saveAll name entities relentities =
             CSymbol (name, "keytuple2"++en)]
 
 restoreAll :: String -> [Entity] -> [Entity] -> CFuncDecl
-restoreAll name entities relentities = 
+restoreAll name entities relentities =
   cmtfunc ("Restore the complete database from files containing Curry terms.\n"++
      "The first argument is the directory where the term files are stored.")
     (name, "restoreAllData") 0 Public
@@ -1635,7 +1635,7 @@ isRelWithRangeForEntityB isc e (Relationship _ [REnd _ _ c1, REnd e2 _ _]) =
 isFiniteRange :: Cardinality -> Bool
 isFiniteRange card = case card of Between _ Infinite -> False
                                   _                  -> True
-    
+
 --- Is a cardinality with a minimum that must be checked?
 isMinRange :: Cardinality -> Bool
 isMinRange card = case card of Exactly i   -> i>1

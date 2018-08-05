@@ -17,17 +17,20 @@ module Database.ERD.Goodies
   , storeERDFromProgram
   ) where
 
-import Char            ( isUpper )
-import Database.ERD
-import Directory       ( getAbsolutePath, removeFile )
-import Distribution    ( installDir, stripCurrySuffix )
+import Data.Char          ( isUpper )
+import Data.List          ( intersperse )
+import Data.Maybe
+import System.Environment ( getEnv )
+import System.Process     ( getPID, system )
+import System.Directory   ( getAbsolutePath, removeFile )
+import Distribution       ( installDir, stripCurrySuffix )
+import IOExts             ( evalCmd, readCompleteFile )
+
 import FlatCurry.Types
 import FlatCurry.Files
 import FlatCurry.Goodies
-import IOExts          ( evalCmd, readCompleteFile )
-import List            ( intersperse )
-import Maybe
-import System          ( getEnviron, getPID, system )
+
+import Database.ERD
 
 --- The name of an ERD.
 erdName :: ERD -> String
@@ -88,11 +91,11 @@ hasDefault (UserDefined _ d) = isJust d
 isForeignKey :: Attribute -> Bool
 isForeignKey (Attribute _ d _ _) = case d of KeyDom _ -> True
                                              _        -> False
-           
+
 --- Has an attribute a null value?
 isNullAttribute :: Attribute -> Bool
 isNullAttribute (Attribute _ _ _ isnull) = isnull
-           
+
 --- The minimum value of a cardinality.
 cardMinimum :: Cardinality -> Int
 cardMinimum (Exactly i) = i
@@ -152,7 +155,7 @@ storeERDFromProgram progfile = do
       erdfuncs = filter hasERDType funcs
   case erdfuncs of
     [] -> error $ "No definition of ER model found in program " ++ progfile
-    [fd] -> do currypath <- getEnviron "CURRYPATH"
+    [fd] -> do currypath <- getEnv "CURRYPATH"
                pid <- getPID
                let tmpfile = "/tmp/ERD2CURRY_tmp_" ++ show pid
                let cmd = installDir++"/bin/curry"
