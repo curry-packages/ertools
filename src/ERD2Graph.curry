@@ -29,7 +29,7 @@ viewERD = viewDotGraph . erd2dot
 -- Translate dependencies into Dot graph:
 erd2dot :: ERD -> DotGraph
 erd2dot (ERD erdname ens rels) =
-  Graph erdname (enodes++concat rnodes) (concat redges)
+  ugraph erdname (enodes++concat rnodes) (concat redges)
  where
   enodes = map entity2dot ens
   (rnodes,redges) = unzip (map relationship2dot rels)
@@ -58,12 +58,12 @@ erd2dot (ERD erdname ens rels) =
     then ([Node rname [("shape","diamond"),("style","filled")],
            Node (rname++r1) [("shape","plaintext"),("label",r1++"\\n"++showCard c1)],
            Node (rname++r2) [("shape","plaintext"),("label",r2++"\\n"++showCard c2)]],
-          map (\ (n1,n2) -> Edge n1 n2 [("dir","none")])
+          map (\ (n1,n2) -> Edge n1 n2 [])
               [(rname,rname++r1),(rname++r1,en1),
                (rname,rname++r2),(rname++r2,en2)])
     else ([Node rname [("shape","diamond"),("style","filled")]],
-          [Edge rname en1 [("dir","none"),("label",r1++"\\n"++showCard c1)],
-           Edge rname en2 [("dir","none"),("label",r2++"\\n"++showCard c2)]])
+          [Edge rname en1 [("label",r1++"\\n"++showCard c1)],
+           Edge rname en2 [("label",r2++"\\n"++showCard c2)]])
 
   showCard (Exactly n) = '(' : show n ++ "," ++ show n ++ ")"
   showCard (Between n Infinite) = '(' : show n ++ ",n)"
