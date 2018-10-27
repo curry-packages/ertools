@@ -11,7 +11,8 @@
         "graphviz"       : ">= 3.0.0",
         "keydb"          : ">= 3.0.0",
         "wl-pprint"      : ">= 2.0.0",
-        "xml"            : ">= 3.0.0"
+        "xml"            : ">= 3.0.0",
+        "base"           : ">= 2.0.0"
     },
     "compilerCompatibility": {
         "pakcs": ">= 2.0.0",
