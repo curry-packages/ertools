@@ -3,8 +3,7 @@
 --- entity/relationship diagrams
 ---
 --- @author Michael Hanus
---- @version January 2018
---- @category database
+--- @version December 2018
 ------------------------------------------------------------------------------
 
 module Database.ERD.Goodies
@@ -20,14 +19,16 @@ module Database.ERD.Goodies
 import Char            ( isUpper )
 import Database.ERD
 import Directory       ( getAbsolutePath, removeFile )
-import Distribution    ( installDir, stripCurrySuffix )
-import FlatCurry.Types
-import FlatCurry.Files
-import FlatCurry.Goodies
+import Distribution    ( installDir )
 import IOExts          ( evalCmd, readCompleteFile )
 import List            ( intersperse )
 import Maybe
 import System          ( getEnviron, getPID, system )
+
+import FlatCurry.Types
+import FlatCurry.Files
+import FlatCurry.Goodies
+import System.CurryPath ( stripCurrySuffix )
 
 --- The name of an ERD.
 erdName :: ERD -> String

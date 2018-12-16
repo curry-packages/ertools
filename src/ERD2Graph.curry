@@ -11,7 +11,6 @@ import IOExts
 import Char(isAlphaNum)
 import List(intersperse)
 import Database.ERD
-import Distribution(getRcVar)
 
 import ShowDotGraph
 
