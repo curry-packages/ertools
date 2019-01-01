@@ -12,6 +12,7 @@
         "flatcurry"      : ">= 2.0.0",
         "graphviz"       : ">= 2.0.0",
         "keydb"          : ">= 2.0.0",
+        "setfunctions"   : ">= 0.0.1",
         "wl-pprint"      : ">= 0.0.1",
         "xml"            : ">= 2.0.0"
     },

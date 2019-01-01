@@ -14,10 +14,6 @@
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
-import AbstractCurry.Types
-import AbstractCurry.Pretty
-import AbstractCurry.Build
-
 import Char           ( toLower, toUpper )
 import Directory      ( doesFileExist, getAbsolutePath )
 import Distribution   ( installDir )
@@ -26,12 +22,15 @@ import IO
 import IOExts         ( connectToCommand )
 import List
 import ReadShowTerm   ( readsQTerm )
-import SetFunctions   ( selectValue, set2 )
 import System
 import Time
 
+import AbstractCurry.Types
+import AbstractCurry.Pretty
+import AbstractCurry.Build
 import Database.ERD
 import Database.ERD.Goodies
+import Control.SetFunctions ( selectValue, set2 )
 import Text.Pretty
 
 -- Write all the data so CDBI can be used, create a database (if it does
