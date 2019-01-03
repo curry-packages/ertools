@@ -3,7 +3,7 @@
 --- from an already transformed ERD term.
 ---
 --- @author Michael Hanus, Marion Mueller
---- @version October 2016
+--- @version January 2019
 ------------------------------------------------------------------------------
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
@@ -11,13 +11,14 @@
 module CodeGeneration(Option,Storage(..),ConsistencyTest(..),
                       isSQLite,erd2code) where
 
+import Char
+import List
+import Maybe
+
 import AbstractCurry.Types
 import AbstractCurry.Build
 import Database.ERD
-import List
-import Char
-import FiniteMap
-import Maybe
+import Data.FiniteMap
 
 import Database.ERD.Goodies
 
