@@ -18,8 +18,8 @@
         "xml"            : ">= 2.0.0"
     },
     "compilerCompatibility": {
-        "pakcs": ">= 2.0.0",
-        "kics2": ">= 2.0.0"
+        "pakcs": ">= 2.0.0, < 3.0.0",
+        "kics2": ">= 2.0.0, < 3.0.0"
     },
     "exportedModules": [ "Database.ERD.Goodies" ],
     "configModule": "ERToolsPackageConfig",
@@ -27,6 +27,8 @@
         "name": "erd2curry",
         "main": "ERD2Curry"
     },
+    "license": "BSD-3-Clause",
+    "licenseFile": "LICENSE",
     "source": {
         "git": "https://git.ps.informatik.uni-kiel.de/curry-packages/ertools.git",
         "tag": "$version"
