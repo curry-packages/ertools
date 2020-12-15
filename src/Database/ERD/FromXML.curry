@@ -4,18 +4,16 @@
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
-module XML2ERD(convert) where
+module Database.ERD.FromXML ( convert ) where
 
-import Char
+import Data.Char
+import Data.List
+import Data.Maybe
+
 import Database.ERD
-import List
-import Maybe
-import Read
-import ReadShowTerm
-import Time
+import Data.Time
+import ReadShowTerm ( readQTerm )
 import XML
-
-
 
 findElements :: [XmlExp] -> [String] -> [XmlExp]
 findElements [] _ = []
@@ -211,17 +209,17 @@ convertCard c = case c of
                                max = fst (break (== ')') max')
                            in
                            if all isDigit min 
-                           then let minimum = readInt min
+                           then let minimum = read min
                                 in
                                 if all isDigit max
-                                then if minimum == readInt max then Exactly minimum
-                                     else if minimum < readInt max
-                                          then Between minimum (Max (readInt max))
+                                then if minimum == read max then Exactly minimum
+                                     else if minimum < read max
+                                          then Between minimum (Max (read max))
                                           else error "wrong cardinality"
                                 else Between minimum Infinite
                            else error "wrong cardinality (min)"
         Just i   -> if all isDigit i 
-                    then let e = readInt i
+                    then let e = read i
                          in
                          if e > 0 then Exactly e else error "cardinality <= 0"
                     else error "wrong cardinality"
@@ -282,7 +280,7 @@ convertDomain (Just t) (Just d) =
     where 
       convertD :: String -> String -> Domain
       convertD typ dom 
-        | elem typ int    = IntDom (Just (readInt dom))
+        | elem typ int    = IntDom (Just (read dom))
         | elem typ float  = FloatDom (Just (readQTerm dom))
         | elem typ char   = CharDom (Just (head dom))
         | elem typ string = StringDom (Just dom)
@@ -298,15 +296,15 @@ convertDomain (Just t) (Just d) =
       parseDate s = 
         let (ts,_:cs) = break (== ' ') s
             d1    = break (== '.') ts
-            day   = readInt (fst d1)
+            day   = read (fst d1)
             d2    = break (== '.') (tail (snd d1))
-            month = readInt (fst d2)
-            year  = readInt (tail (snd d2))    
+            month = read (fst d2)
+            year  = read (tail (snd d2))    
             c1    = break (== ':') cs 
-            hour  = readInt (fst c1)
+            hour  = read (fst c1)
             c2    = break (== ':') (tail (snd c1))
-            minute = readInt (fst c2)
-            second = readInt (tail (snd c2))
+            minute = read (fst c2)
+            second = read (tail (snd c2))
         in
         CalendarTime year month day hour minute second 0
 

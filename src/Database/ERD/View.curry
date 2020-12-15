@@ -4,15 +4,15 @@
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
-module ERD2Graph(viewERD) where
+module Database.ERD.View ( viewERD ) where
 
-import IO
-import IOExts
-import Char(isAlphaNum)
-import List(intersperse)
+import Data.Char ( isAlphaNum )
+import Data.List ( intersperse )
+
 import Database.ERD
-
 import ShowDotGraph
+import System.IOExts
+
 
 -- Should a relation represented as an explicit node?
 -- If not, it will be represented as an arc with a label.

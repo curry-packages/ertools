@@ -1,30 +1,32 @@
-module ERD2Curry( main, erd2curryWithDBandERD, erd2cdbiWithDBandERD )
+module ERD2Curry ( main, erd2curryWithDBandERD, erd2cdbiWithDBandERD )
   where
 
-import AbstractCurry.Files  (readCurry)
-import AbstractCurry.Select (imports)
+import Control.Monad        ( when, unless )
+import Data.List            ( isSuffixOf )
+import System.Environment   ( getArgs, setEnv )
+
+import AbstractCurry.Files  ( readCurry )
+import AbstractCurry.Select ( imports )
 import AbstractCurry.Pretty
 import Database.ERD
-import Directory
-import Distribution         ( curryCompiler, installDir )
-import FilePath             ( (</>) )
-import List                 ( isSuffixOf )
-import System               ( exitWith, getArgs, setEnviron, system )
-import Time
+import Data.Time
+import System.Directory
+import System.FilePath      ( (</>) )
+import System.Process       ( exitWith, system )
 import XML
 
+import Database.ERD.FromXML
 import Database.ERD.Goodies
+import Database.ERD.ToCDBI  ( writeCDBI )
+import Database.ERD.View
 import CodeGeneration
-import ERD2CDBI             ( writeCDBI )
-import ERD2Graph
 import ERToolsPackageConfig ( packagePath, packageVersion, packageLoadPath )
 import Transformation
-import XML2ERD
 
 systemBanner :: String
 systemBanner =
   let bannerText = "ERD->Curry Compiler (Version " ++ packageVersion ++
-                   " of 22/03/18)"
+                   " of 15/12/20)"
       bannerLine = take (length bannerText) (repeat '-')
    in bannerLine ++ "\n" ++ bannerText ++ "\n" ++ bannerLine
 
@@ -128,7 +130,7 @@ startERD2Curry Nothing = do
   exitWith 1
 startERD2Curry (Just opts) = do
   -- set CURRYPATH in order to compile ERD model (which requires Database.ERD)
-  unless (null packageLoadPath) $ setEnviron "CURRYPATH" packageLoadPath
+  unless (null packageLoadPath) $ setEnv "CURRYPATH" packageLoadPath
   -- the directory containing the sources of this tool:
   let erd2currysrcdir = packagePath </> "src"
       orgfile         = optERProg opts
@@ -162,24 +164,21 @@ start erd2currysrcdir opts srcfile path = do
   when (optCDBI opts) $
     writeCDBI srcfile transerd (storagePath (fst opt))
   unless (optToERDT opts || optCDBI opts) $ do
-    copyAuxiliaryFiles
     moveOldVersion curryfile
     curdir <- getCurrentDirectory
     setCurrentDirectory path
-    impprogs <- mapIO readCurry (imports erdprog)
+    impprogs <- mapM readCurry (imports erdprog)
     setCurrentDirectory curdir
     writeFile curryfile $
       prettyCurryProg
         (setOnDemandQualification (erdprog:impprogs) defaultOptions)
         erdprog
-    putStrLn $ "Database operations generated into file '" ++ curryfile ++
-               "'\nwith " ++ showOption opt ++ ".\n"
+    putStrLn $ unlines
+      [ "Database operations generated into file '" ++ curryfile ++ "'"
+      , "with " ++ showOption opt ++ "."
+      , "NOTE: To compile this module, use packages " ++
+        "'keydb', 'ertools' and 'time'." ]
  where
-  -- Copy auxiliary files ERDGeneric.curry and KeyDatabase.curry to target dir
-  copyAuxiliaryFiles = do
-    copyFile (erd2currysrcdir </> "ERDGeneric.curry")
-             (addPath path "ERDGeneric.curry")
-
   showOption (Files f,_) = "database files stored in directory '"++f++"'"
   showOption (SQLite f,_) =
     "SQLite3 database stored in file '" ++ f ++ "'"
@@ -202,7 +201,7 @@ moveOldVersion fname = do
      system $ "mv "++fname++" "++fnamevers
      putStrLn $ "Old contents of file \""++fname++"\" saved into file \""++
                 fnamevers++"\"."
-   else done
+   else return ()
  where
   calTime2Digits (CalendarTime y mo d h mi s _) =
     toD (y `mod` 100) ++ toD mo ++ toD d ++ toD h ++ toD mi ++ toD s

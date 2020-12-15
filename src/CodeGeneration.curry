@@ -3,22 +3,22 @@
 --- from an already transformed ERD term.
 ---
 --- @author Michael Hanus, Marion Mueller
---- @version January 2019
+--- @version December 2020
 ------------------------------------------------------------------------------
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
-module CodeGeneration(Option,Storage(..),ConsistencyTest(..),
-                      isSQLite,erd2code) where
+module CodeGeneration
+  ( Option, Storage(..), ConsistencyTest(..), isSQLite, erd2code
+  ) where
 
-import Char
-import List
-import Maybe
+import Data.Char
+import Data.List
+import Data.Maybe
 
 import AbstractCurry.Types
 import AbstractCurry.Build
 import Database.ERD
-import Data.FiniteMap
 
 import Database.ERD.Goodies
 
@@ -37,18 +37,8 @@ isSQLite (storage,_) =
   case storage of SQLite _ -> True
                   _        -> False
 
--- The name of the KeyDatabase module:
-keyDatabaseMod :: String
-keyDatabaseMod = "Database.KeyDatabaseSQLite"
-
 erd2code :: Option -> ERD -> CurryProg
 erd2code opt@(_, consistencyTest) (ERD n es rs) =
-  let imports = "ERDGeneric"  
-              : keyDatabaseMod
-              : fmSortBy (<) (concatMap getImports es)
-      entities = filter (not . isGenerated) es
-      generatedEntities = filter isGenerated es
-  in
   CurryProg n
             imports Nothing [] []
             (concatMap (entity2datatype opt n) entities 
@@ -70,7 +60,11 @@ erd2code opt@(_, consistencyTest) (ERD n es rs) =
              ++ [saveAll    n entities generatedEntities,
                  restoreAll n entities generatedEntities])
             []
-
+ where
+  imports = "Database.ERD.Generic" : keyDatabaseMod :
+            sort (concatMap getImports es)
+  entities = filter (not . isGenerated) es
+  generatedEntities = filter isGenerated es
 
 generateStorageDefinition :: Option -> String -> [CFuncDecl]
 generateStorageDefinition (storage, _) n = case storage of
@@ -257,7 +251,7 @@ getImports (Entity _ attrs) = getImportsAttrs attrs
    getImportsAttrs [] = []
    getImportsAttrs ((Attribute _ t _ _) : ats) =
      case t of UserDefined s _ -> takeWhile (/= '.') s : getImportsAttrs ats
-               DateDom _       -> "Time" : getImportsAttrs ats
+               DateDom _       -> timeMod : getImportsAttrs ats
                _               -> getImportsAttrs ats
 
 -- Create data type definitions for an entity:
@@ -369,7 +363,7 @@ entity2selmod _ ername (Entity name attrs) =
                 FloatDom _      -> pre "Float"
                 StringDom _     -> pre "String"
                 BoolDom _       -> pre "Bool"
-                DateDom _       -> ("Time","CalendarTime")
+                DateDom _       -> calTimeType
                 UserDefined s _ -> userMod s
                 KeyDom s        -> (ername,s++"Key")
                 _               -> pre "" -- should not occur
@@ -951,9 +945,8 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
                (StringDom (Just _))    -> stringType
                (BoolDom Nothing)       -> boolType
                (BoolDom (Just _))      -> maybeType boolType
-               (DateDom Nothing)       -> baseType ("Time","CalendarTime")
-               (DateDom (Just _))      -> maybeType
-                                            (baseType ("Time","CalendarTime"))
+               (DateDom Nothing)       -> baseType calTimeType
+               (DateDom (Just _))      -> maybeType (baseType calTimeType)
                (UserDefined s Nothing) -> baseType (userMod s)
                (UserDefined s (Just _))-> maybeType (baseType (userMod s))
                (KeyDom _)              -> baseType (erdgen "Key")
@@ -964,7 +957,7 @@ newEntity (str,eName) attrs ens rels v esAll rsAll =
                (FloatDom _)     -> maybeType floatType
                (StringDom _)    -> stringType
                (BoolDom _)      -> maybeType boolType
-               (DateDom _)      -> maybeType (baseType ("Time","CalendarTime"))
+               (DateDom _)      -> maybeType (baseType calTimeType)
                (UserDefined s _)-> maybeType (baseType (userMod s))
                (KeyDom _)       -> maybeType (baseType (erdgen "Key"))
           
@@ -1463,7 +1456,7 @@ attrType (Attribute _ t k False) =
             (FloatDom _)     -> floatType
             (StringDom _ )   -> stringType
             (BoolDom _)      -> boolType
-            (DateDom _)      -> baseType ("Time","CalendarTime")
+            (DateDom _)      -> baseType calTimeType
             (UserDefined s _)-> baseType (userMod s)
             (KeyDom _)       -> baseType (erdgen "Key")
             _                -> intType
@@ -1475,7 +1468,7 @@ attrType (Attribute _ t k True) =
              -- string null values are not handles as Maybe types
             (StringDom _ )   -> stringType
             (BoolDom _)      -> maybeType boolType
-            (DateDom _)      -> maybeType (baseType ("Time","CalendarTime"))
+            (DateDom _)      -> maybeType (baseType calTimeType)
             (UserDefined s _)-> maybeType (baseType (userMod s))
             (KeyDom _)       -> maybeType (baseType (erdgen "Key"))
             _                -> maybeType intType
@@ -1663,9 +1656,21 @@ transactType = applyTC transTC [unitType]
 entityKeyType :: QName -> CTypeExpr
 entityKeyType (modname,ename) = baseType (modname, ename ++ "Key")
 
--- A symbol from module Database.
+-- The name of the KeyDatabase module:
+keyDatabaseMod :: String
+keyDatabaseMod = "Database.KeyDatabaseSQLite"
+
+-- A symbol from module`Database.KeyDatabaseSQLite`.
 db :: String -> QName
 db f = (keyDatabaseMod, f)
+
+-- The name of the Time module:
+timeMod :: String
+timeMod = "Data.Time"
+
+-- The `CalendarTime` type symbol.
+calTimeType :: QName
+calTimeType = (timeMod,"CalendarTime")
 
 -- Extract a qualified string into a QName:
 userMod :: String -> QName
@@ -1677,7 +1682,7 @@ transTC :: QName
 transTC = db "Transaction"
 
 erdgen :: String -> QName
-erdgen f = ("ERDGeneric", f)
+erdgen f = ("Database.ERD.Generic", f)
 
 lowerFirst :: String -> String
 lowerFirst [] = []

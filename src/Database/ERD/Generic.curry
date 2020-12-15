@@ -3,11 +3,10 @@
 --- to support the database code generated from ERDs
 ------------------------------------------------------------------------------
 
-module ERDGeneric where
+module Database.ERD.Generic where
 
-import Char(isDigit)
-import List
-import Read
+import Data.Char ( isDigit )
+import Data.List
 import ReadShowTerm
 
 import Database.KeyDatabaseSQLite
@@ -30,7 +29,7 @@ showDatabaseKey en fromenkey enkey = en ++ show (fromenkey enkey)
 readDatabaseKey :: String -> (Key -> enkey) -> String -> Maybe enkey
 readDatabaseKey en toenkey s =
   let (ens,ks) = splitAt (length en) s
-   in if ens==en && all isDigit ks then Just (toenkey (readNat ks))
+   in if ens==en && all isDigit ks then Just (toenkey (read ks))
                                    else Nothing
 
 

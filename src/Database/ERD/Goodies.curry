@@ -3,8 +3,9 @@
 --- entity/relationship diagrams
 ---
 --- @author Michael Hanus
---- @version December 2018
+--- @version December 2020
 ------------------------------------------------------------------------------
+{-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
 module Database.ERD.Goodies
   ( erdName, entityName, isEntityNamed, entityAttributes
@@ -16,19 +17,22 @@ module Database.ERD.Goodies
   , storeERDFromProgram
   ) where
 
-import Char            ( isUpper )
-import Database.ERD
-import Directory       ( getAbsolutePath, removeFile )
-import Distribution    ( installDir )
-import IOExts          ( evalCmd, readCompleteFile )
-import List            ( intersperse )
-import Maybe
-import System          ( getEnviron, getPID, system )
+import Curry.Compiler.Distribution ( installDir )
+import Data.Char                   ( isUpper )
+import Data.List                   ( intersperse )
+import Data.Maybe
+import System.Environment          ( getEnv )
 
+import Database.ERD
 import FlatCurry.Types
 import FlatCurry.Files
 import FlatCurry.Goodies
-import System.CurryPath ( stripCurrySuffix )
+import System.CurryPath    ( stripCurrySuffix )
+import System.Directory    ( getAbsolutePath, removeFile )
+import System.FilePath     ( (</>) )
+import System.IOExts       ( evalCmd, readCompleteFile )
+import System.Process      ( getPID, system )
+
 
 --- The name of an ERD.
 erdName :: ERD -> String
@@ -112,19 +116,24 @@ showERD n (ERD en es rs) = "ERD " ++ showString en ++ lb n ++
   ++ lb n ++
   " [" ++ concat (intersperse ("," ++ lb (n+2)) (map (showRs (n+2)) rs)) ++ "]"
 
+showEs :: Int -> Entity -> String
 showEs n (Entity en attrs) = "Entity " ++ showString en ++ lb (n+7) ++
   "[" ++ concat (intersperse ("," ++ lb (n+8)) (map showWOBrackets attrs)) ++"]"
 
+showRs :: Int -> Relationship -> String
 showRs n (Relationship rn ends) =
   "Relationship " ++ showString rn ++ lb (n+13) ++
   "[" ++ concat (intersperse ("," ++ lb (n+14)) (map showWOBrackets ends)) ++"]"
 
+showWOBrackets :: Show a => a -> String
 showWOBrackets t = stripBrackets (show t)
  where
   stripBrackets (c:cs) = if c=='(' then reverse (tail (reverse cs)) else c:cs
 
-showString s = "\""++s++"\""
+showString :: String -> String
+showString s = "\"" ++ s ++ "\""
 
+lb :: Int -> String
 lb n = "\n" ++ take n (repeat ' ')
 
 
@@ -153,10 +162,10 @@ storeERDFromProgram progfile = do
       erdfuncs = filter hasERDType funcs
   case erdfuncs of
     [] -> error $ "No definition of ER model found in program " ++ progfile
-    [fd] -> do currypath <- getEnviron "CURRYPATH"
+    [fd] -> do currypath <- getEnv "CURRYPATH"
                pid <- getPID
                let tmpfile = "/tmp/ERD2CURRY_tmp_" ++ show pid
-               let cmd = installDir++"/bin/curry"
+               let cmd = installDir </> "bin" </> "curry"
                    args  = [ "--nocypm"
                            , ":set","v0" ]
                    input = unlines $
@@ -170,7 +179,7 @@ storeERDFromProgram progfile = do
                                 snd (funcName fd) ++
                                 " >>= writeFile " ++ show tmpfile
                             , ":quit"]
-               (ecode,outstr,errstr) <- evalCmd cmd args input
+               (ecode,_,errstr) <- evalCmd cmd args input
                if ecode > 0
                  then error $ "ERROR in ERD term file generation:\n" ++ errstr
                  else do erdtermfile <- readCompleteFile tmpfile
@@ -178,6 +187,7 @@ storeERDFromProgram progfile = do
                          return erdtermfile
     _ -> error $ "Multiple ER model definitions found in program " ++ progfile
 
+hasERDType :: FuncDecl -> Bool
 hasERDType fdecl = funcType fdecl == TCons ("Database.ERD","ERD") []
 
 ------------------------------------------------------------------------------

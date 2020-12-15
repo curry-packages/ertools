@@ -14,16 +14,19 @@
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
-import Char           ( toLower, toUpper )
-import Directory      ( doesFileExist, getAbsolutePath )
-import Distribution   ( installDir )
-import qualified FilePath as FP ( (</>), combine, splitFileName)
-import IO
-import IOExts         ( connectToCommand )
-import List
-import ReadShowTerm   ( readsQTerm )
-import System
-import Time
+module Database.ERD.ToCDBI where
+
+import Control.Monad               ( when )
+import Curry.Compiler.Distribution ( installDir )
+import Data.Char                   ( toLower, toUpper )
+import Data.List
+import System.IO
+
+import Data.Time
+import qualified System.FilePath as FP ( (</>), combine, splitFileName)
+import System.Directory      ( doesFileExist, getAbsolutePath )
+import System.IOExts         ( connectToCommand )
+import System.Process        ( system )
 
 import AbstractCurry.Types
 import AbstractCurry.Pretty
@@ -42,7 +45,7 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
   dbPath <- getAbsolutePath dbname
   let cdbimod  = name
       cdbiFile = cdbimod++".curry"
-      imports  = [ "Time"
+      imports  = [ timeMod
                  , "Database.CDBI.ER"
                  , "Database.CDBI.Criteria"
                  , "Database.CDBI.Connection"
@@ -64,7 +67,10 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
     [ pPrint
        (ppCurryProg defaultOptions
          (CurryProg cdbimod imports Nothing [] [] typeDecls funcDecls [])) ]
-  putStrLn $ "Database operations generated into file '" ++ cdbiFile ++ "'"
+  putStrLn $ unlines
+    [ "Database operations generated into file '" ++ cdbiFile ++ "'."
+    , "NOTE: Packages 'cdbi' and 'time' are required to compile this module."
+    ]
   infofilehandle <- openFile (name++"_SQLCode.info") WriteMode
   writeParserFile infofilehandle name ents rels dbPath
   hClose infofilehandle
@@ -368,7 +374,7 @@ getType _ (FloatDom _)      = floatType
 getType _ (CharDom _)       = baseType (pre "Char")
 getType _ (StringDom _)     = stringType
 getType _ (BoolDom _)       = boolType
-getType _ (DateDom _)       = baseType ("Time", "ClockTime")
+getType _ (DateDom _)       = baseType (inTime "ClockTime")
 getType mName (KeyDom name) = baseType (mName, name++"ID")
 
 -- Generates all getter and setter methods based on an entity.
@@ -595,7 +601,7 @@ attr2CType mName name (Attribute a adom _ anull) = case adom of
   CharDom   _ -> addMaybeIfNull anull (baseType (pre "Char"))
   StringDom _ -> stringType
   BoolDom   _ -> addMaybeIfNull anull boolType
-  DateDom   _ -> addMaybeIfNull anull (baseType ("Time", "ClockTime"))
+  DateDom   _ -> addMaybeIfNull anull (baseType (inTime "ClockTime"))
   KeyDom    k -> addMaybeIfNull anull (baseType (mName ,(k++"ID")))
  where
   addMaybeIfNull isnull texp = if isnull then maybeType texp else texp
@@ -612,7 +618,7 @@ attr2NewCType mName name (Attribute a adom _ anull) = case adom of
   CharDom   d -> addMaybeIfNullOrDflt anull d (baseType (pre "Char"))
   StringDom _ -> stringType
   BoolDom   d -> addMaybeIfNullOrDflt anull d boolType
-  DateDom   d -> addMaybeIfNullOrDflt anull d (baseType ("Time", "ClockTime"))
+  DateDom   d -> addMaybeIfNullOrDflt anull d (baseType (inTime "ClockTime"))
   KeyDom    k -> addMaybeIfNullOrDflt anull Nothing (baseType (mName, k++"ID"))
  where
   addMaybeIfNullOrDflt _      (Just _) texp = maybeType texp
@@ -818,8 +824,8 @@ domVar2NewExp (dom, v) = case dom of
   StringDom (Just x) -> applyF (pre "if_then_else")
                          [applyF (pre "null") [cvar v], string2ac x, cvar v]
   DateDom   (Just (CalendarTime yr mo dy hr mi sc tz)) ->
-    genMaybeWith (applyF ("Time","toClockTime")
-                    [applyF ("Time","CalendarTime")
+    genMaybeWith (applyF (inTime "toClockTime")
+                    [applyF (inTime "CalendarTime")
                        [cInt yr, cInt mo, cInt dy,
                         cInt hr, cInt mi, cInt sc, cInt tz]])
   _ -> cvar v
@@ -986,5 +992,13 @@ lowerCase s = map toLower s
 -- A Boolean as an AbstractCurry expression.
 boolCExpr :: Bool -> CExpr
 boolCExpr b = constF (pre (if b then "True" else "False"))
+
+-- The name of the Time module:
+timeMod :: String
+timeMod = "Data.Time"
+
+-- A symbol from module `Data.Time`.
+inTime :: String -> QName
+inTime f = (timeMod, f)
 
 ----------------------------------------------------------------------------

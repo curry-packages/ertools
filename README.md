@@ -1,5 +1,5 @@
-ER Tools for Curry
-==================
+Curry-Tools for Dealing with Entity-Relationship Models for Databases
+=====================================================================
 
 This directory contains tools for dealing with database applications
 specified by entity-relationship diagrams (ERDs) in Curry programs.
@@ -79,5 +79,7 @@ of ERD models:
   presented in the original paper cited above.
 
 ---
+
 Further infos and contact:
-Michael Hanus <http://www.informatik.uni-kiel.de/~mh>
+
+[Michael Hanus](http://www.informatik.uni-kiel.de/~mh)
