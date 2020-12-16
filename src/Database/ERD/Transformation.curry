@@ -6,7 +6,8 @@
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
-module Transformation(transform) where
+module Database.ERD.Transformation ( transform )
+ where
 
 import Database.ERD 
 import Database.ERD.Goodies

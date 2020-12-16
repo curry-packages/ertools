@@ -1,6 +1,15 @@
 ------------------------------------------------------------------------------
---- This module generates the Curry code for all database operations
+--- This module generates a Curry code for all database operations
 --- from an already transformed ERD term.
+--- The generated code is intended to be used with module
+--- `Database.KeyDatabaseSQLite` from package `keydb`.
+--- The basic idea of the code transformation is described in
+---
+---     B. Brassel, M. Hanus, M. Mueller:
+---     High-Level Database Programming in Curry
+---     In Proc. of the Tenth International Symposium on
+---     Practical Aspects of Declarative Languages (PADL 2008),  pp. 316-332,
+---     Springer LNCS 4902, 2008
 ---
 --- @author Michael Hanus, Marion Mueller
 --- @version December 2020
@@ -8,7 +17,7 @@
 
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
-module CodeGeneration
+module Database.ERD.ToKeyDB
   ( Option, Storage(..), ConsistencyTest(..), isSQLite, erd2code
   ) where
 

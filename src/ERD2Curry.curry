@@ -18,15 +18,15 @@ import XML
 import Database.ERD.FromXML
 import Database.ERD.Goodies
 import Database.ERD.ToCDBI  ( writeCDBI )
+import Database.ERD.ToKeyDB
+import Database.ERD.Transformation
 import Database.ERD.View
-import CodeGeneration
 import ERToolsPackageConfig ( packagePath, packageVersion, packageLoadPath )
-import Transformation
 
 systemBanner :: String
 systemBanner =
   let bannerText = "ERD->Curry Compiler (Version " ++ packageVersion ++
-                   " of 15/12/20)"
+                   " of 16/12/20)"
       bannerLine = take (length bannerText) (repeat '-')
    in bannerLine ++ "\n" ++ bannerText ++ "\n" ++ bannerLine
 
@@ -92,16 +92,17 @@ storagePath DB         = ""
 
 helpText :: String
 helpText = unlines
-  [ "Usage:"
+  [ ""
+  , "Usage:"
   , ""
-  , "    erd2curry [-l] [-d] [-t] [-x] [-v] [--db <dbfile>] [--cdbi] <prog>"
+  , "    erd2curry [-l|-d|-t|-x|-v|--db <dbfile>|--cdbi] <prog>"
   , ""
-  , "Parameters:"
-  , "-l: generate interface to SQLite3 database (default)"
-  , "-d: generate interface to SQL database (experimental)"
-  , "-x: generate from ERD xmi document instead of ERD Curry program"
-  , "-t: only transform ERD into ERDT term file"
-  , "-v: only show visualization of ERD with dotty"
+  , "Options:"
+  , "-l           : generate interface to SQLite3 database (default)"
+  , "-d           : generate interface to SQL database (experimental)"
+  , "-x           : generate from ERD xmi document instead of ERD Curry program"
+  , "-t           : only transform ERD into ERDT term file"
+  , "-v           : only show visualization of ERD with dotty"
   , "--db <dbfile>: file of the SQLite3 database"
   , "--cdbi       : generate Curry module for Database.CDBI modules"
   , "<prog>       : name of Curry program file containing ERD definition"
@@ -132,19 +133,18 @@ startERD2Curry (Just opts) = do
   -- set CURRYPATH in order to compile ERD model (which requires Database.ERD)
   unless (null packageLoadPath) $ setEnv "CURRYPATH" packageLoadPath
   -- the directory containing the sources of this tool:
-  let erd2currysrcdir = packagePath </> "src"
-      orgfile         = optERProg opts
+  let orgfile         = optERProg opts
   erdfile <- if ".curry"  `isSuffixOf` orgfile ||
                 ".lcurry" `isSuffixOf` orgfile
                then storeERDFromProgram orgfile
                else return orgfile
   if optVisualize opts
    then readERDTermFile erdfile >>= viewERD
-   else start erd2currysrcdir opts erdfile "."
+   else start opts erdfile "."
 
 --- Main function to invoke the ERD->Curry translator.
-start :: String -> EROptions -> String -> String -> IO ()
-start erd2currysrcdir opts srcfile path = do
+start :: EROptions -> String -> String -> IO ()
+start opts srcfile path = do
   (erdfile,erd) <- if optFromXml opts
                    then transformXmlFile srcfile path
                    else readERDTermFile srcfile >>= \e -> return (srcfile,e)
