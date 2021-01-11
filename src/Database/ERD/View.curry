@@ -7,10 +7,10 @@
 module Database.ERD.View ( viewERD ) where
 
 import Data.Char ( isAlphaNum )
-import Data.List ( intersperse )
+import Data.List ( intercalate )
 
 import Database.ERD
-import ShowDotGraph
+import Data.GraphViz
 import System.IOExts
 
 
@@ -28,19 +28,19 @@ viewERD = viewDotGraph . erd2dot
 -- Translate dependencies into Dot graph:
 erd2dot :: ERD -> DotGraph
 erd2dot (ERD erdname ens rels) =
-  ugraph erdname (enodes++concat rnodes) (concat redges)
+  ugraph erdname (enodes ++ concat rnodes) (concat redges)
  where
   enodes = map entity2dot ens
   (rnodes,redges) = unzip (map relationship2dot rels)
 
   entity2dot (Entity ename attrs) =
-    Node ename [("shape","record"),("style","bold"),
-                ("label","{"++ename ++ "|" ++
-                      concat (intersperse ("\\n") (map showAttr attrs))++"}")]
+    Node ename [("shape", "record"),("style","bold"),
+                ("label", "{" ++ ename ++ "|" ++
+                          intercalate ("\\n") (map showAttr attrs) ++ "}")]
 
   showAttr (Attribute aname dom key isnull) =
     aname ++ " :: " ++ showDomain dom ++
-    (if key==NoKey then "" else " / "++show key) ++
+    (if key==NoKey then "" else " / " ++ show key) ++
     (if isnull then " / null" else "")
 
   showDomain (IntDom _)        = "Int"
@@ -55,14 +55,16 @@ erd2dot (ERD erdname ens rels) =
   relationship2dot (Relationship rname [REnd en1 r1 c1, REnd en2 r2 c2]) =
     if relationAsNode
     then ([Node rname [("shape","diamond"),("style","filled")],
-           Node (rname++r1) [("shape","plaintext"),("label",r1++"\\n"++showCard c1)],
-           Node (rname++r2) [("shape","plaintext"),("label",r2++"\\n"++showCard c2)]],
+           Node (rname ++ r1)
+                [("shape","plaintext"),("label",r1 ++ "\\n" ++ showCard c1)],
+           Node (rname ++ r2)
+                [("shape","plaintext"),("label",r2 ++ "\\n" ++ showCard c2)]],
           map (\ (n1,n2) -> Edge n1 n2 [])
-              [(rname,rname++r1),(rname++r1,en1),
-               (rname,rname++r2),(rname++r2,en2)])
+              [(rname,rname ++ r1),(rname ++ r1,en1),
+               (rname,rname ++ r2),(rname ++ r2,en2)])
     else ([Node rname [("shape","diamond"),("style","filled")]],
-          [Edge rname en1 [("label",r1++"\\n"++showCard c1)],
-           Edge rname en2 [("label",r2++"\\n"++showCard c2)]])
+          [Edge rname en1 [("label",r1 ++ "\\n" ++ showCard c1)],
+           Edge rname en2 [("label",r2 ++ "\\n" ++ showCard c2)]])
 
   showCard (Exactly n) = '(' : show n ++ "," ++ show n ++ ")"
   showCard (Between n Infinite) = '(' : show n ++ ",n)"

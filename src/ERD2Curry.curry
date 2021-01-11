@@ -26,7 +26,7 @@ import ERToolsPackageConfig ( packagePath, packageVersion, packageLoadPath )
 systemBanner :: String
 systemBanner =
   let bannerText = "ERD->Curry Compiler (Version " ++ packageVersion ++
-                   " of 16/12/20)"
+                   " of 11/01/21)"
       bannerLine = take (length bannerText) (repeat '-')
    in bannerLine ++ "\n" ++ bannerText ++ "\n" ++ bannerLine
 
