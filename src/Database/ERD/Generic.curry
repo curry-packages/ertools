@@ -251,8 +251,8 @@ minTestDelete ename entrypred info2entry selector min attr =
 -------------------------------------------------------------------------
 -- Saving and restoring dynamic predicates.
 
-saveDBTerms :: String -> String -> (Key -> a -> Dynamic)
-            -> (Key -> a -> _) -> IO ()
+saveDBTerms :: Show en => String -> String -> (Key -> a -> Dynamic)
+            -> (Key -> a -> en) -> IO ()
 saveDBTerms path ename dynpred toentity = do
   keyinfos <- runQ (allDBKeyInfos dynpred)
   let savefile  = path++"/"++ename++".terms"
@@ -263,16 +263,16 @@ saveDBTerms path ename dynpred toentity = do
     else do putStrLn $ "Saving into " ++ savefile
             writeFile savefile showterms
 
-restoreDBTerms :: String -> String -> (Key -> a -> Dynamic)
-               -> (en->Key) -> (en->a)  -> IO ()
+restoreDBTerms :: Read en => String -> String -> (Key -> a -> Dynamic)
+               -> (en -> Key) -> (en -> a)  -> IO ()
 restoreDBTerms path ename dynpred enkey eninfo = do
   let savefile = path++"/"++ename++".terms"
   putStrLn $ "Restoring from "++savefile
   terms <- readFile savefile >>= return . map read . lines 
   runJustT (mapT_ (\t -> newDBKeyEntry dynpred (enkey t) (eninfo t)) terms)
 
-restoreDBRelTerms :: String -> String -> (Key -> a -> Dynamic)
-                  -> (en->a)  -> IO ()
+restoreDBRelTerms :: Read en => String -> String -> (Key -> a -> Dynamic)
+                  -> (en -> a)  -> IO ()
 restoreDBRelTerms path ename dynpred eninfo = do
   let savefile = path++"/"++ename++".terms"
   putStrLn $ "Restoring from "++savefile
