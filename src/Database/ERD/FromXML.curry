@@ -12,7 +12,6 @@ import Data.Maybe
 
 import Database.ERD
 import Data.Time
-import ReadShowTerm ( readQTerm )
 import XML
 
 findElements :: [XmlExp] -> [String] -> [XmlExp]
@@ -281,7 +280,7 @@ convertDomain (Just t) (Just d) =
       convertD :: String -> String -> Domain
       convertD typ dom 
         | elem typ int    = IntDom (Just (read dom))
-        | elem typ float  = FloatDom (Just (readQTerm dom))
+        | elem typ float  = FloatDom (Just (read dom))
         | elem typ char   = CharDom (Just (head dom))
         | elem typ string = StringDom (Just dom)
         | elem typ bool   = if dom == "true" 

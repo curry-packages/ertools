@@ -7,7 +7,6 @@ module Database.ERD.Generic where
 
 import Data.Char ( isDigit )
 import Data.List
-import ReadShowTerm
 
 import Database.KeyDatabaseSQLite
 
@@ -256,19 +255,20 @@ saveDBTerms :: String -> String -> (Key -> a -> Dynamic)
             -> (Key -> a -> _) -> IO ()
 saveDBTerms path ename dynpred toentity = do
   keyinfos <- runQ (allDBKeyInfos dynpred)
-  let savefile = path++"/"++ename++".terms"
-      terms = map (uncurry toentity) keyinfos
+  let savefile  = path++"/"++ename++".terms"
+      terms     = map (uncurry toentity) keyinfos
+      showterms = unlines (map show terms)
   if null path
-   then putStrLn (unlines (map showQTerm terms)) -- show only
-   else do putStrLn $ "Saving into "++savefile
-           writeQTermListFile savefile terms
+    then putStrLn showterms -- show only
+    else do putStrLn $ "Saving into " ++ savefile
+            writeFile savefile showterms
 
 restoreDBTerms :: String -> String -> (Key -> a -> Dynamic)
                -> (en->Key) -> (en->a)  -> IO ()
 restoreDBTerms path ename dynpred enkey eninfo = do
   let savefile = path++"/"++ename++".terms"
   putStrLn $ "Restoring from "++savefile
-  terms <- readQTermListFile savefile
+  terms <- readFile savefile >>= return . map read . lines 
   runJustT (mapT_ (\t -> newDBKeyEntry dynpred (enkey t) (eninfo t)) terms)
 
 restoreDBRelTerms :: String -> String -> (Key -> a -> Dynamic)
@@ -276,7 +276,7 @@ restoreDBRelTerms :: String -> String -> (Key -> a -> Dynamic)
 restoreDBRelTerms path ename dynpred eninfo = do
   let savefile = path++"/"++ename++".terms"
   putStrLn $ "Restoring from "++savefile
-  terms <- readQTermListFile savefile
+  terms <- readFile savefile >>= return . map read . lines 
   runJustT (mapT_ (\t -> newDBEntry dynpred (eninfo t)) terms)
 
 -------------------------------------------------------------------------

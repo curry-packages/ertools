@@ -117,7 +117,7 @@ writeParserFile :: Handle ->
                    IO()
 writeParserFile infofilehandle name ents rels dbPath = do
   hPutStrLn infofilehandle 
-            (pPrint (ppCExpr defaultOptions 
+            (pPrint (ppCExpr (setNoQualification defaultOptions)
                              (applyE (CSymbol ("SQLParserInfoType", "PInfo")) 
                                      [string2ac dbPath,
                                       string2ac name,
