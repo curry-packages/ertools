@@ -3,7 +3,7 @@
 --- entity/relationship diagrams
 ---
 --- @author Michael Hanus
---- @version December 2020
+--- @version October 2021
 ------------------------------------------------------------------------------
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
@@ -27,7 +27,7 @@ import Database.ERD
 import FlatCurry.Types
 import FlatCurry.Files
 import FlatCurry.Goodies
-import System.CurryPath    ( stripCurrySuffix )
+import System.CurryPath    ( runModuleActionQuiet, stripCurrySuffix )
 import System.Directory    ( getAbsolutePath, removeFile )
 import System.FilePath     ( (</>) )
 import System.IOExts       ( evalCmd, readCompleteFile )
@@ -157,7 +157,7 @@ storeERDFromProgram :: String -> IO String
 storeERDFromProgram progfile = do
   putStrLn $ "Creating ERD term file from program `" ++ progfile ++ "'..."
   let progname = stripCurrySuffix progfile
-  prog <- readFlatCurry progname
+  prog <- runModuleActionQuiet readFlatCurry progname
   let funcs = progFuncs prog
       erdfuncs = filter hasERDType funcs
   case erdfuncs of
