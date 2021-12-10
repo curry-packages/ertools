@@ -3,7 +3,7 @@
 --- entity/relationship diagrams
 ---
 --- @author Michael Hanus
---- @version October 2021
+--- @version December 2021
 ------------------------------------------------------------------------------
 {-# OPTIONS_CYMAKE -Wno-incomplete-patterns #-}
 
@@ -14,7 +14,7 @@ module Database.ERD.Goodies
   , isForeignKey, isNullAttribute
   , cardMinimum, cardMaximum
   , showERD, combineIds
-  , storeERDFromProgram
+  , readERDFromProgram, storeERDFromProgram
   ) where
 
 import Curry.Compiler.Distribution ( installDir )
@@ -147,21 +147,21 @@ combineIds (name:names) = name ++ concatMap maybeAddUnderscore names
   maybeAddUnderscore s@(c:_) = if isUpper c then s else '_' : s
 
 ------------------------------------------------------------------------------
--- Auxiliaries to generate ERD term file from a ERD definition given
--- in a Curry program.
+-- Auxiliaries to read ERD definition given in a Curry program.
 
---- Writes the ERD defined in a Curry program (as a top-level operation
---- of type `Database.ERD.ERD`) in a term file and return the name of
---- the term file.
-storeERDFromProgram :: String -> IO String
-storeERDFromProgram progfile = do
-  putStrLn $ "Creating ERD term file from program `" ++ progfile ++ "'..."
+--- Reads the ERD defined in a Curry program (as a top-level operation
+--- of type `Database.ERD.ERD`).
+--- This is done by compiling the Curry program with an auxiliary
+--- operation and processing the output of the program.
+readERDFromProgram :: String -> IO ERD
+readERDFromProgram progfile = do
+  putStr $ "Processing ERD in program `" ++ progfile ++ "'..."
   let progname = stripCurrySuffix progfile
   prog <- runModuleActionQuiet readFlatCurry progname
   let funcs = progFuncs prog
       erdfuncs = filter hasERDType funcs
   case erdfuncs of
-    [] -> error $ "No definition of ER model found in program " ++ progfile
+    []   -> error $ "No definition of ER model found in program " ++ progfile
     [fd] -> do currypath <- getEnv "CURRYPATH"
                pid <- getPID
                let tmpfile = "/tmp/ERD2CURRY_tmp_" ++ show pid
@@ -174,18 +174,27 @@ storeERDFromProgram progfile = do
                                else [":set path " ++ currypath] ) ++
                             [ ":load " ++ progname
                             , ":add " ++ "Database.ERD"
-                            , ":eval " ++
-                                "Database.ERD.writeERDTermFile " ++
-                                snd (funcName fd) ++
-                                " >>= writeFile " ++ show tmpfile
+                            , ":eval writeFileWithERDTerm " ++
+                                     show tmpfile ++ snd (funcName fd)
                             , ":quit"]
                (ecode,_,errstr) <- evalCmd cmd args input
+               putStrLn "done"
                if ecode > 0
-                 then error $ "ERROR in ERD term file generation:\n" ++ errstr
+                 then error $ "ERROR in program defining ERD:\n" ++ errstr
                  else do erdtermfile <- readCompleteFile tmpfile
                          removeFile tmpfile
-                         return erdtermfile
+                         return (read erdtermfile)
     _ -> error $ "Multiple ER model definitions found in program " ++ progfile
+
+--- Writes the ERD defined in a Curry program (as a top-level operation
+--- of type `Database.ERD.ERD`) in a term file and return the name of
+--- the term file.
+storeERDFromProgram :: String -> IO String
+storeERDFromProgram progfile = do
+  erd <- readERDFromProgram progfile
+  fname <- writeERDTermFile erd
+  putStrLn $ "ERD term file '" ++ fname ++ "' written."
+  return fname
 
 hasERDType :: FuncDecl -> Bool
 hasERDType fdecl = funcType fdecl == TCons ("Database.ERD","ERD") []

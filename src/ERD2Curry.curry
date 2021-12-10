@@ -1,4 +1,4 @@
-module ERD2Curry ( main, erd2curryWithDBandERD, erd2cdbiWithDBandERD )
+module ERD2Curry ( main, erd2CDBI, erd2curryWithDBandERD )
   where
 
 import Control.Monad        ( when, unless )
@@ -10,23 +10,22 @@ import AbstractCurry.Select ( imports )
 import AbstractCurry.Pretty
 import Database.ERD
 import Data.Time
-import System.Directory
-import System.FilePath      ( (</>) )
+import System.Directory     ( doesFileExist, getModificationTime )
 import System.Process       ( exitWith, system )
-import XML
+import XML                  ( readXmlFile )
 
 import Database.ERD.FromXML
 import Database.ERD.Goodies
 import Database.ERD.ToCDBI  ( writeCDBI )
 import Database.ERD.ToKeyDB
 import Database.ERD.Transformation
-import Database.ERD.View
+import Database.ERD.View    ( viewERD )
 import ERToolsPackageConfig ( packagePath, packageVersion, packageLoadPath )
 
 systemBanner :: String
 systemBanner =
   let bannerText = "ERD->Curry Compiler (Version " ++ packageVersion ++
-                   " of 11/01/21)"
+                   " of 10/12/21)"
       bannerLine = take (length bannerText) (repeat '-')
    in bannerLine ++ "\n" ++ bannerText ++ "\n" ++ bannerLine
 
@@ -108,22 +107,25 @@ helpText = unlines
   , "<prog>       : name of Curry program file containing ERD definition"
   ]
 
---- Runs ERD2Curry with a given database and ERD term file or program.
+--- Runs ERD2Curry with a given database and ERD program.
 erd2curryWithDBandERD :: String -> String -> IO ()
 erd2curryWithDBandERD dbname erfile =
   startERD2Curry
     (Just defaultEROptions
              { optStorage = SQLite dbname, optERProg = erfile })
 
---- Runs ERD2CDBI with a given database, a Curry program file
---- containing ERD definition, and a target module name.
-erd2cdbiWithDBandERD :: String -> String -> IO ()
-erd2cdbiWithDBandERD dbname erprog =
-  startERD2Curry
-    (Just defaultEROptions
-            { optStorage = SQLite dbname
-            , optCDBI    = True
-            , optERProg  = erprog })
+--- Translate an ERD into a Curry program using the API provided by the
+--- Curry package `cdbi`. The parameters are the name of the database,
+--- the name of the Curry program containing the ERD (only used in
+--- a comment of the generated program), and the ERD definition.
+--- The generated Curry module has the name of the ERD and
+--- is put into the current directory.
+erd2CDBI :: String -> String -> ERD -> IO ()
+erd2CDBI dbname erdfile erd =
+  startWithERD
+    (defaultEROptions { optStorage = SQLite dbname, optCDBI = True })
+    erdfile
+    erd
 
 startERD2Curry :: Maybe EROptions -> IO ()
 startERD2Curry Nothing = do
@@ -133,24 +135,25 @@ startERD2Curry (Just opts) = do
   -- set CURRYPATH in order to compile ERD model (which requires Database.ERD)
   unless (null packageLoadPath) $ setEnv "CURRYPATH" packageLoadPath
   -- the directory containing the sources of this tool:
-  let orgfile         = optERProg opts
-  erdfile <- if ".curry"  `isSuffixOf` orgfile ||
-                ".lcurry" `isSuffixOf` orgfile
-               then storeERDFromProgram orgfile
-               else return orgfile
-  if optVisualize opts
-   then readERDTermFile erdfile >>= viewERD
-   else start opts erdfile "."
+  let orgfile = optERProg opts
+  if optFromXml opts
+    then do (_,erd) <- transformXmlFile orgfile
+            startWithERD opts orgfile erd
+    else do
+      unless (".curry"  `isSuffixOf` orgfile ||
+              ".lcurry" `isSuffixOf` orgfile) $ do
+        putStrLn $ "ERROR: '" ++ orgfile ++ "' is not a Curry program file!"
+        exitWith 1
+      if optVisualize opts
+        then readERDFromProgram orgfile >>= viewERD
+        else readERDFromProgram orgfile >>= startWithERD opts orgfile
 
 --- Main function to invoke the ERD->Curry translator.
-start :: EROptions -> String -> String -> IO ()
-start opts srcfile path = do
-  (erdfile,erd) <- if optFromXml opts
-                   then transformXmlFile srcfile path
-                   else readERDTermFile srcfile >>= \e -> return (srcfile,e)
+startWithERD :: EROptions -> String -> ERD -> IO ()
+startWithERD opts srcfile erd = do
   let erdname      = erdName erd
-      transerdfile = addPath path (erdname ++ "_ERDT.term")
-      curryfile    = addPath path (erdname ++ ".curry")
+      transerdfile = erdname ++ "_ERDT.term"
+      curryfile    = erdname ++ ".curry"
       transerd     = transform erd
       opt          = ( if optStorage opts == SQLite ""
                          then SQLite (erdname ++ ".db")
@@ -158,17 +161,14 @@ start opts srcfile path = do
                      , WithConsistencyTest )
       erdprog      = erd2code opt (transform erd)
   writeFile transerdfile
-            ("{- ERD specification transformed from "++erdfile++" -}\n\n " ++
+            ("{- ERD specification transformed from "++srcfile++" -}\n\n " ++
              showERD 2 transerd ++ "\n")
   putStrLn $ "Transformed ERD term written into file '"++transerdfile++"'."
   when (optCDBI opts) $
     writeCDBI srcfile transerd (storagePath (fst opt))
   unless (optToERDT opts || optCDBI opts) $ do
     moveOldVersion curryfile
-    curdir <- getCurrentDirectory
-    setCurrentDirectory path
     impprogs <- mapM readCurry (imports erdprog)
-    setCurrentDirectory curdir
     writeFile curryfile $
       prettyCurryProg
         (setOnDemandQualification (erdprog:impprogs) defaultOptions)
@@ -183,11 +183,6 @@ start opts srcfile path = do
   showOption (SQLite f,_) =
     "SQLite3 database stored in file '" ++ f ++ "'"
   showOption (DB,_) = "SQL database interface"
-
---- Adds a path to a file name.
-addPath :: String -> String -> String
-addPath path fname | path=="." = fname
-                   | otherwise = path </> fname
 
 --- Moves a file (if it exists) to one with extension ".versYYMMDDhhmmss".
 moveOldVersion :: String -> IO ()
@@ -210,12 +205,12 @@ moveOldVersion fname = do
   
 
 --- Read an ERD specification from an XML file in Umbrello format.
-transformXmlFile :: String -> String -> IO (String,ERD)
-transformXmlFile xmlfile path = do
+transformXmlFile :: String -> IO (String,ERD)
+transformXmlFile xmlfile = do
   putStrLn $ "Reading XML file " ++ xmlfile ++ "..."
   xml <- readXmlFile xmlfile
   let erd     = convert xml
-  let erdfile = addPath path (erdName erd ++ "_ERD.term")
+  let erdfile = erdName erd ++ "_ERD.term"
   writeFile erdfile
             ("{- ERD specification read from "++xmlfile++" -}\n\n " ++
              showERD 2 erd ++ "\n")
