@@ -24,7 +24,7 @@ import System.IO
 
 import Data.Time
 import qualified System.FilePath as FP ( (</>), combine, splitFileName)
-import System.Directory      ( doesFileExist, getAbsolutePath )
+import System.Directory      ( doesFileExist )
 import System.IOExts         ( connectToCommand )
 import System.Process        ( system )
 
@@ -42,16 +42,15 @@ import Text.Pretty
 -- the ER model, and the name of the SQLite3 database.
 writeCDBI :: String -> ERD -> String -> IO ()
 writeCDBI erdfname (ERD name ents rels) dbname = do
-  dbPath <- getAbsolutePath dbname
   let cdbimod  = name
-      cdbiFile = cdbimod++".curry"
+      cdbiFile = cdbimod ++ ".curry"
       imports  = [ timeMod
                  , "Database.CDBI.ER"
                  , "Database.CDBI.Criteria"
                  , "Database.CDBI.Connection"
                  , "Database.CDBI.Description"]
       typeDecls  = foldr ((++) . (genEntityTypeDecls cdbimod)) [] ents 
-      funcDecls  = genDBPathFunc cdbimod dbPath :
+      funcDecls  = genDBPathFunc cdbimod dbname :
                    foldr ((++) . (genEntityFuncDecls cdbimod)) [] ents ++
                    genNewDBSchema cdbimod ents ++
                    genSaveDB cdbimod ents ++
@@ -71,29 +70,29 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
     [ "Database operations generated into file '" ++ cdbiFile ++ "'."
     , "NOTE: Packages 'cdbi' and 'time' are required to compile this module."
     ]
-  infofilehandle <- openFile (name++"_SQLCode.info") WriteMode
-  writeParserFile infofilehandle name ents rels dbPath
+  infofilehandle <- openFile (name ++ "_SQLCode.info") WriteMode
+  writeParserFile infofilehandle name ents rels dbname
   hClose infofilehandle
-  dbexists <- doesFileExist dbPath
+  dbexists <- doesFileExist dbname
   if dbexists
    then do
-    putStrLn $ "Database '" ++ dbPath ++ "' exists and, thus, not modified."
+    putStrLn $ "Database '" ++ dbname ++ "' exists and, thus, not modified."
     putStrLn $ "Please make sure that this database is conform to the ER model!"
     -- TODO: if the database exists, check its consistency with ER model
    else do
-    putStrLn $ "Creating new sqlite3 database: " ++ dbPath
+    putStrLn $ "CREATING NEW SQLITE3 DATABASE: " ++ dbname
     exsqlite3 <- system "which sqlite3 > /dev/null"
     when (exsqlite3>0) $
       error "Database interface `sqlite3' not found. Please install package `sqlite3'!"
-    db <- connectToCommand $ "sqlite3 " ++ dbPath
+    db <- connectToCommand $ "sqlite3 " ++ dbname
     hPutStrLn db $ unlines (map entity2createTable ents)
     hClose db
 
 genDBPathFunc :: String -> String -> CFuncDecl
-genDBPathFunc mname dbPath =
+genDBPathFunc mname dbname =
   stCmtFunc "The name of the SQLite database file."
           (mname,"sqliteDBFile")
-          0 Public stringType [simpleRule [] (string2ac dbPath)]
+          0 Public stringType [simpleRule [] (string2ac dbname)]
 
 -- -----writing .info-file containing auxiliary data for parsing -------------
 
@@ -114,12 +113,12 @@ writeParserFile :: Handle ->
                    [Entity] ->
                    [Relationship] -> 
                    String -> 
-                   IO()
-writeParserFile infofilehandle name ents rels dbPath = do
+                   IO ()
+writeParserFile infofilehandle name ents rels dbname = do
   hPutStrLn infofilehandle 
             (pPrint (ppCExpr (setNoQualification defaultOptions)
                              (applyE (CSymbol ("SQLParserInfoType", "PInfo")) 
-                                     [string2ac dbPath,
+                                     [string2ac dbname,
                                       string2ac name,
                                       relations, 
                                       nullables,
