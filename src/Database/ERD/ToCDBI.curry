@@ -1,4 +1,4 @@
-------------------------------------------------------------------------------
+-----------------------------------------------------------------------------
 --- This module creates all datatypes to represent the entities and
 --- relations of a relational (SQLite) database corresponding to a
 --- logical ER model specified in a file `x_ERDT.term` (which is
@@ -39,12 +39,12 @@ import Text.Pretty
 -- Write all the data so CDBI can be used, create a database (if it does
 -- not exist) and a `.info` file.
 -- The parameters are the name of the file containing the ERD term,
+-- the name of the file to store the Curry program,
+-- the module name of the generated Curry program,
 -- the ER model, and the name of the SQLite3 database.
-writeCDBI :: String -> ERD -> String -> IO ()
-writeCDBI erdfname (ERD name ents rels) dbname = do
-  let cdbimod  = name
-      cdbiFile = cdbimod ++ ".curry"
-      imports  = [ timeMod
+writeCDBI :: String -> String -> String -> ERD -> String -> IO ()
+writeCDBI erdfname outfile cdbimod (ERD name ents rels) dbname = do
+  let imports  = [ timeMod
                  , "Database.CDBI.ER"
                  , "Database.CDBI.Criteria"
                  , "Database.CDBI.Connection"
@@ -55,7 +55,7 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
                    genNewDBSchema cdbimod ents ++
                    genSaveDB cdbimod ents ++
                    genRunFuncs cdbimod
-  writeFile cdbiFile $ unlines $
+  writeFile outfile $ unlines $
     map ("--- "++)
         [ "This file has been generated from"
         , ""
@@ -67,11 +67,11 @@ writeCDBI erdfname (ERD name ents rels) dbname = do
        (ppCurryProg defaultOptions
          (CurryProg cdbimod imports Nothing [] [] typeDecls funcDecls [])) ]
   putStrLn $ unlines
-    [ "Database operations generated into file '" ++ cdbiFile ++ "'."
+    [ "Database operations generated into file '" ++ outfile ++ "'."
     , "NOTE: Packages 'cdbi' and 'time' are required to compile this module."
     ]
   infofilehandle <- openFile (name ++ "_SQLCode.info") WriteMode
-  writeParserFile infofilehandle name ents rels dbname
+  writeParserFile infofilehandle cdbimod ents rels dbname
   hClose infofilehandle
   dbexists <- doesFileExist dbname
   if dbexists
@@ -114,12 +114,12 @@ writeParserFile :: Handle ->
                    [Relationship] -> 
                    String -> 
                    IO ()
-writeParserFile infofilehandle name ents rels dbname = do
+writeParserFile infofilehandle modname ents rels dbname = do
   hPutStrLn infofilehandle 
             (pPrint (ppCExpr (setNoQualification defaultOptions)
                              (applyE (CSymbol ("SQLParserInfoType", "PInfo")) 
                                      [string2ac dbname,
-                                      string2ac name,
+                                      string2ac modname,
                                       relations, 
                                       nullables,
                                       attributes,

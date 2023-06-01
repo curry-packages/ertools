@@ -1,13 +1,16 @@
-module ERD2Curry ( main, erd2CDBI, erd2curryWithDBandERD )
-  where
+module ERD2Curry
+  ( main, startWithERD, EROptions(..), defaultEROptions
+  , erd2CDBI, erd2curryWithDBandERD )
+ where
 
 import Control.Monad        ( when, unless )
 import Data.List            ( isSuffixOf )
 import System.Environment   ( getArgs, setEnv )
 
-import AbstractCurry.Files  ( readCurry )
-import AbstractCurry.Select ( imports )
+import AbstractCurry.Files     ( readCurry )
+import AbstractCurry.Select    ( imports )
 import AbstractCurry.Pretty
+import AbstractCurry.Transform ( renameCurryModule )
 import Database.ERD
 import Data.Time
 import System.Directory     ( doesFileExist, getModificationTime )
@@ -25,7 +28,7 @@ import ERToolsPackageConfig ( packagePath, packageVersion, packageLoadPath )
 systemBanner :: String
 systemBanner =
   let bannerText = "ERD->Curry Compiler (Version " ++ packageVersion ++
-                   " of 08/05/23)"
+                   " of 01/06/23)"
       bannerLine = take (length bannerText) (repeat '-')
    in bannerLine ++ "\n" ++ bannerText ++ "\n" ++ bannerLine
 
@@ -36,6 +39,8 @@ data EROptions = EROptions
   , optStorage   :: Storage -- storage of data
   , optToERDT    :: Bool    -- only transform into ERDT term file
   , optCDBI      :: Bool    -- generate Curry for Database.CDBI libraries
+  , optModule    :: String  -- name of generated Curry module
+  , optFile      :: String  -- file to store generated Curry module
   }
 
 defaultEROptions :: EROptions
@@ -46,6 +51,8 @@ defaultEROptions = EROptions
   , optStorage   = SQLite ""
   , optToERDT    = False
   , optCDBI      = False
+  , optModule    = ""
+  , optFile      = ""
   }
 
 --- Main function for saved state. The argument is the directory containing
@@ -58,7 +65,7 @@ main = do
   startERD2Curry configs
 
 parseArgs :: EROptions -> [String] -> IO (Maybe EROptions)
-parseArgs _ [] = return Nothing
+parseArgs _    []         = return Nothing
 parseArgs opts (arg:args) = case arg of
   "-h" -> putStrLn helpText >> exitWith 0
   "-?" -> putStrLn helpText >> exitWith 0
@@ -72,7 +79,13 @@ parseArgs opts (arg:args) = case arg of
                              (tail args)
   "-t" -> parseArgs opts { optToERDT = True } args
   "-v" -> parseArgs opts { optVisualize = True } args
-  "--cdbi" -> parseArgs opts { optCDBI = True } args
+  "--cdbi"   -> parseArgs opts { optCDBI = True } args
+  "--module" -> if null args
+                  then return Nothing
+                  else parseArgs opts { optModule = head args } (tail args)
+  "--outfile"-> if null args
+                  then return Nothing
+                  else parseArgs opts { optFile = head args } (tail args)
   f    -> return $ if null args then Just opts { optERProg = f }
                                 else Nothing
  where
@@ -94,9 +107,10 @@ helpText = unlines
   [ ""
   , "Usage:"
   , ""
-  , "    erd2curry [-l|-d|-t|-x|-v|--db <dbfile>|--cdbi] <prog>"
+  , "    erd2curry <options> <prog>"
   , ""
-  , "Options:"
+  , "with options:"
+  , ""
   , "-l           : generate interface to SQLite3 database (default)"
   , "-d           : generate interface to SQL database (experimental)"
   , "-x           : generate from ERD xmi document instead of ERD Curry program"
@@ -104,6 +118,8 @@ helpText = unlines
   , "-v           : only show visualization of ERD with dotty"
   , "--db <dbfile>: file of the SQLite3 database"
   , "--cdbi       : generate Curry module for Database.CDBI modules"
+  , "--module <m> : name of generated Curry module (default: <ERD name>)"
+  , "--outfile <f>: file to store the generated module (default: <ERD name>.curry)"
   , "<prog>       : name of Curry program file containing ERD definition"
   ]
 
@@ -149,23 +165,34 @@ startERD2Curry (Just opts) = do
         else readERDFromProgram orgfile >>= startWithERD opts orgfile
 
 --- Main function to invoke the ERD->Curry translator.
+--- The parameters are the tool options,
+--- the name of the Curry program containing the ERD (only used in
+--- a comment of the generated program), and the ERD definition.
+--- If not changed by specific options, the generated Curry module
+--- has the name of the ERD and is put into the current directory.
 startWithERD :: EROptions -> String -> ERD -> IO ()
 startWithERD opts srcfile erd = do
   let erdname      = erdName erd
       transerdfile = erdname ++ "_ERDT.term"
-      curryfile    = erdname ++ ".curry"
+      curryfile    = if null (optFile opts) then erdname ++ ".curry"
+                                            else optFile opts
       transerd     = transform erd
       opt          = ( if optStorage opts == SQLite ""
                          then SQLite (erdname ++ ".db")
                          else optStorage opts
                      , WithConsistencyTest )
-      erdprog      = erd2code opt (transform erd)
-  writeFile transerdfile
-            ("{- ERD specification transformed from "++srcfile++" -}\n\n " ++
-             showERD 2 transerd ++ "\n")
-  putStrLn $ "Transformed ERD term written into file '"++transerdfile++"'."
+      erdprog      = let prog = erd2code opt (transform erd)
+                     in if null (optModule opts)
+                          then prog
+                          else renameCurryModule (optModule opts) prog
+  writeFile transerdfile $
+    "{- ERD specification transformed from " ++ srcfile ++ " -}\n\n " ++
+    showERD 2 transerd ++ "\n"
+  putStrLn $ "Transformed ERD term written into file '" ++ transerdfile ++ "'."
   when (optCDBI opts) $
-    writeCDBI srcfile transerd (storagePath (fst opt))
+    writeCDBI srcfile curryfile
+              (if null (optModule opts) then erdname else optModule opts)
+              transerd (storagePath (fst opt))
   unless (optToERDT opts || optCDBI opts) $ do
     moveOldVersion curryfile
     impprogs <- mapM readCurry (imports erdprog)
