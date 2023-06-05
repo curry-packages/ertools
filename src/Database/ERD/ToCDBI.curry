@@ -777,7 +777,7 @@ genEntryFuncs mName (Entity name attrs) =
               stCmtFunc ("Gets the associated `" ++ adom1 ++
                          "` entities for a given `" ++ adom2 ++ "` entity\n" ++
                          "w.r.t. the `" ++ name ++ "` relation.")
-               (mName, "get" ++ adom1 ++ adom2 ++ "s") 1 Public
+               (mName, "get" ++ name ++ adom1 ++ adom2 ++ "s") 1 Public
                (baseType (mName,adom1) ~>
                 applyTC (mConn, "DBAction")
                         [listType (baseType (mName,adom2))])
