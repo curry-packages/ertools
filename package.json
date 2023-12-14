@@ -16,7 +16,6 @@
         "io-extra"       : ">= 3.0.0, < 4.0.0",
         "keydb"          : ">= 3.0.0, < 4.0.0",
         "process"        : ">= 3.0.0, < 4.0.0",
-        "setfunctions"   : ">= 3.0.0, < 4.0.0",
         "time"           : ">= 3.0.0, < 4.0.0",
         "wl-pprint"      : ">= 3.0.0, < 4.0.0",
         "xml"            : ">= 3.0.0, < 4.0.0"
@@ -30,7 +29,7 @@
     "license": "BSD-3-Clause",
     "licenseFile": "LICENSE",
     "source": {
-        "git": "https://git.ps.informatik.uni-kiel.de/curry-packages/ertools.git",
+        "git": "https://github.com/curry-packages/ertools.git",
         "tag": "$version"
     }
 }

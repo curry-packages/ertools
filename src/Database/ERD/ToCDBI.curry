@@ -33,7 +33,6 @@ import AbstractCurry.Pretty
 import AbstractCurry.Build
 import Database.ERD
 import Database.ERD.Goodies
-import Control.SetFunctions ( selectValue, set2 )
 import Text.Pretty
 
 -- Write all the data so CDBI can be used, create a database (if it does
@@ -108,150 +107,112 @@ mER = "Database.CDBI.ER"
 
 -- generates an AbstractCurry expression representing the parser information
 -- and writes it to the file
-writeParserFile :: Handle -> 
-                   String -> 
-                   [Entity] ->
-                   [Relationship] -> 
-                   String -> 
-                   IO ()
+writeParserFile :: Handle -> String -> [Entity] -> [Relationship] -> String
+                -> IO ()
 writeParserFile infofilehandle modname ents rels dbname = do
   hPutStrLn infofilehandle 
             (pPrint (ppCExpr (setNoQualification defaultOptions)
-                             (applyE (CSymbol ("SQLParserInfoType", "PInfo")) 
+                             (applyE (pinfoType "PInfo")
                                      [string2ac dbname,
                                       string2ac modname,
                                       relations, 
                                       nullables,
                                       attributes,
                                       attrTypes])))  
-    where relations = list2ac (foldr ((++) . getRelationTypes ents) [] rels)
-          nullables = list2ac (foldr ((++) . getNullableAttr) [] ents) 
-          attributes = list2ac (map getAttrList ents)
-          attrTypes = list2ac (foldr ((++) . getAttrTypes) [] ents) 
+ where relations  = list2ac (foldr ((++) . getRelationTypes ents) [] rels)
+       nullables  = list2ac (foldr ((++) . getNullableAttr) [] ents) 
+       attributes = list2ac (map getAttrList ents)
+       attrTypes  = list2ac (foldr ((++) . getAttrTypes) [] ents) 
 
 
--- generates data term for each  relationship 
--- depending on its type
+-- generates data term for each  relationship depending on its type:
 getRelationTypes :: [Entity] -> Relationship -> [CExpr]
-getRelationTypes ents rel = selectValue (set2 getrelationtypes ents rel)
+getRelationTypes ents relationship = case relationship of
+  Relationship  ""  [REnd e1Name _ _, REnd e2Name reName _] ->
+    [tupleExpr [tupleExpr (map string2ac
+                               [e1Name, reName, getCorEnt ents e1Name e2Name]),
+                  applyE (pinfoType "MtoN") [string2ac e2Name]],
+     tupleExpr [tupleExpr (map string2ac 
+                               [e1Name, e2Name, 
+                               (getCorEnt ents e1Name e2Name)]),
+                  applyE (pinfoType "MtoN") [string2ac e2Name]]]
+  Relationship rName 
+      [REnd e1Name re1Name (Between 0 _), REnd e2Name re2Name (Exactly 1)] ->
+    [tupleExpr [tupleExpr (map string2ac [e2Name, re1Name, e1Name]),
+                applyE (pinfoType "OnetoN") [(string2ac rName)]],
+     tupleExpr [tupleExpr (map string2ac [e1Name, re2Name, e2Name]),
+                applyE (pinfoType "NtoOne") [string2ac rName]]]  
+  Relationship rName@(_:_)
+      [REnd e1Name re1Name (Exactly 1), REnd e2Name re2Name (Between 0 _)] ->
+    [tupleExpr [tupleExpr (map string2ac [e2Name, re1Name, e1Name]),
+                applyE (pinfoType "NtoOne") [string2ac rName]],
+     tupleExpr [tupleExpr (map string2ac [e1Name, re2Name, e2Name]),
+                applyE (pinfoType "OnetoN") [string2ac rName]]]
+  Relationship rName
+               [REnd e1Name re1Name (Between _ _),
+                REnd e2Name re2Name (Between 0 (Max 1))] ->
+    [tupleExpr [tupleExpr (map string2ac 
+                               [e2Name, re1Name, e1Name]),
+                  applyE (pinfoType "OnetoN")
+                         [string2ac rName]],
+     tupleExpr [tupleExpr (map string2ac [e1Name, re2Name, e2Name]),
+                applyE (pinfoType "NtoOne") [string2ac rName]]]
+  Relationship rName
+               [REnd e1Name re1Name (Between 0 (Max 1)),
+                REnd e2Name re2Name (Between _ _)] ->
+    [tupleExpr [tupleExpr (map string2ac [e2Name, re1Name, e1Name]),
+                applyE (pinfoType "NtoOne") [string2ac rName]],
+     tupleExpr [tupleExpr (map string2ac [e1Name, re2Name, e2Name]),
+                applyE (pinfoType "OnetoN") [string2ac rName]]]
 
--- Non-deterministic implementation:
-getrelationtypes :: [Entity] -> Relationship -> [CExpr]
-getrelationtypes ents (Relationship 
-                       "" 
-                       [REnd e1Name _ _, REnd e2Name reName _]) =                    
-                           [tupleExpr [tupleExpr (map string2ac 
-                                                      [e1Name, reName, 
-                                                      (getCorEnt ents e1Name e2Name)]),
-                                         applyE (CSymbol ("SQLParserInfoType","MtoN")) 
-                                                [(string2ac e2Name)]],
-                            tupleExpr [tupleExpr (map string2ac 
-                                                      [e1Name, e2Name, 
-                                                      (getCorEnt ents e1Name e2Name)]),
-                                         applyE (CSymbol ("SQLParserInfoType","MtoN")) 
-                                                 [(string2ac e2Name)]]]
-getrelationtypes _ (Relationship 
-                       rName 
-                       [REnd e1Name re1Name (Between 0 _),
-                         REnd e2Name re2Name (Exactly 1)]) =
-                            [tupleExpr [tupleExpr (map string2ac 
-                                                       [e2Name, re1Name, e1Name]),
-                                           applyE (CSymbol ("SQLParserInfoType","OnetoN"))
-                                                   [(string2ac rName)]],
-                             tupleExpr [tupleExpr (map string2ac 
-                                                  [e1Name, re2Name, e2Name]),
-                                          applyE (CSymbol  ("SQLParserInfoType", "NtoOne")) 
-                                                  [(string2ac rName)]]]  
-getrelationtypes _ (Relationship 
-                     rName@(_:_) 
-                     [REnd e1Name re1Name (Exactly 1),
-                       REnd e2Name re2Name (Between 0 _)]) = 
-                          [tupleExpr [tupleExpr (map string2ac
-                                                     [e2Name, re1Name, e1Name]),
-                                         applyE (CSymbol ("SQLParserInfoType", "NtoOne")) 
-                                                 [(string2ac rName)]],
-                           tupleExpr [tupleExpr (map string2ac 
-                                                     [e1Name, re2Name, e2Name]),
-                                        applyE (CSymbol ("SQLParserInfoType", "OnetoN"))
-                                               [(string2ac rName)]]]
-getrelationtypes _ (Relationship
-                      rName
-                      [REnd e1Name re1Name (Between _ _),
-                       REnd e2Name re2Name (Between 0 (Max 1))]) =
-                          [tupleExpr [tupleExpr (map string2ac 
-                                                     [e2Name, re1Name, e1Name]),
-                                        applyE (CSymbol ("SQLParserInfoType", "OnetoN"))
-                                               [(string2ac rName)]],
-                           tupleExpr [tupleExpr (map string2ac 
-                                                     [e1Name, re2Name, e2Name]),
-                                        applyE (CSymbol ("SQLParserInfoType", "NtoOne"))
-                                               [(string2ac rName)]]]
-getrelationtypes _ (Relationship
-                      rName
-                      [REnd e1Name re1Name (Between 0 (Max 1)),
-                       REnd e2Name re2Name (Between _ _)]) =
-                          [tupleExpr [tupleExpr (map string2ac 
-                                                     [e2Name, re1Name, e1Name]),
-                                         applyE (CSymbol ("SQLParserInfoType", "NtoOne"))
-                                                [(string2ac rName)]],
-                           tupleExpr [tupleExpr (map string2ac 
-                                                    [e1Name, re2Name, e2Name]),
-                                       applyE (CSymbol ("SQLParserInfoType","OnetoN"))
-                                               [(string2ac rName)]]]
-
---finding second entity belonging to an MtoN relationship                                                
+-- find second entity belonging to an MtoN relationship
 getCorEnt :: [Entity] -> String -> String -> String
 getCorEnt [] _ _ = ""  -- this should not happen
 getCorEnt ((Entity name attrs):ents) eName rName = 
   if name == rName 
-   then checkAttributes attrs eName
-   else getCorEnt ents eName rName
-  where checkAttributes ((Attribute _ typ _ _):atts) n =
-           case typ of
-             (KeyDom kName) -> if kName == n 
-                                 then checkAttributes atts n
-                                 else kName
-             _              -> checkAttributes atts n
-        checkAttributes [] _ = "" --should not happen
+    then checkAttributes attrs eName
+    else getCorEnt ents eName rName
+ where checkAttributes ((Attribute _ typ _ _):atts) n = case typ of
+         KeyDom kName -> if kName == n then checkAttributes atts n
+                                       else kName
+         _            -> checkAttributes atts n
+       checkAttributes [] _ = "" --should not happen
  
 
 -- generates data term providing for each attribute (name) 
 -- if it is nullable or not
 getNullableAttr :: Entity -> [CExpr] 
-getNullableAttr (Entity name attrs) = (map (getNullValue name) attrs) 
+getNullableAttr (Entity name attrs) = map (getNullValue name) attrs
 
 getNullValue :: String -> Attribute -> CExpr
 getNullValue ename (Attribute aName _ _ nullable) =  
-        tupleExpr [string2ac (firstLow ename ++ aName) 
-                  , CSymbol (pre (show nullable))]
+  tupleExpr [string2ac (firstLow ename ++ aName), CSymbol (pre (show nullable))]
 
 -- generates data term providing the type of each attribute
 getAttrTypes :: Entity -> [CExpr]
-getAttrTypes (Entity name attrs) =  
-                (map (getTypeOf name) attrs)
+getAttrTypes (Entity name attrs) = map (getTypeOf name) attrs
                                         
 getTypeOf :: String -> Attribute -> CExpr
-getTypeOf ename (Attribute aName domain key _) = 
- case domain of
-    (IntDom _ ) -> case key of
-                     PKey -> tupleExpr [string2ac (firstLow ename ++ aName),
-                                        string2ac (firstUp ename)]
-                     NoKey -> tupleExpr [string2ac (firstLow ename ++ aName),
-                                         string2ac "int"]
+getTypeOf ename (Attribute aName domain key _) = case domain of
+  IntDom _      -> case key of
+                     PKey   -> tupleExpr [string2ac (firstLow ename ++ aName),
+                                          string2ac (firstUp ename)]
+                     NoKey  -> tupleExpr [string2ac (firstLow ename ++ aName),
+                                          string2ac "int"]
                      Unique -> tupleExpr [string2ac (firstLow ename ++ aName),
                                           string2ac "int"]
-    (FloatDom _ ) -> tupleExpr [string2ac (firstLow ename ++ aName),
-                                string2ac "float"]
-    (CharDom _ )  -> tupleExpr [string2ac (firstLow ename ++ aName),
-                                string2ac "char"]
-    (StringDom _ ) ->  tupleExpr [string2ac (firstLow ename ++ aName),
-                                  string2ac "string"]
-    (BoolDom _ )   -> tupleExpr [string2ac (firstLow ename ++ aName),
-                                 string2ac "bool"]
-    (DateDom _ ) -> tupleExpr [string2ac (firstLow ename ++ aName),
-                               string2ac "date"]
-    (KeyDom e2Name ) -> tupleExpr [string2ac (firstLow ename ++ aName),
-                                   string2ac e2Name]
+  FloatDom _    -> tupleExpr [string2ac (firstLow ename ++ aName),
+                              string2ac "float"]
+  CharDom _     -> tupleExpr [string2ac (firstLow ename ++ aName),
+                              string2ac "char"]
+  StringDom _   -> tupleExpr [string2ac (firstLow ename ++ aName),
+                              string2ac "string"]
+  BoolDom _     -> tupleExpr [string2ac (firstLow ename ++ aName),
+                              string2ac "bool"]
+  DateDom _     -> tupleExpr [string2ac (firstLow ename ++ aName),
+                              string2ac "date"]
+  KeyDom e2Name -> tupleExpr [string2ac (firstLow ename ++ aName),
+                              string2ac e2Name]
 
 
 -- Generates data term providing for each tableName the list of its attributes
@@ -266,8 +227,7 @@ getAttrList (Entity name attrs) =
 
 -- Generates the declaration of datatype and ID-type for each entity.   
 genEntityTypeDecls :: String -> Entity -> [CTypeDecl] 
-genEntityTypeDecls mName ent =                        
-   [genEntityType mName ent, genIDType mName ent]
+genEntityTypeDecls mName ent = [genEntityType mName ent, genIDType mName ent]
                            
 -- Generates a entity-datatype based on an entity.
 genEntityType :: String -> Entity -> CTypeDecl
@@ -284,7 +244,7 @@ genIDType mName (Entity name _) =
        [simpleCCons (mName, (name ++"ID")) Public [intType]]
        [pre "Eq", pre "Show", pre "Read"]
 
--- Generates all function declarations for an entity.                                               
+-- Generates all function declarations for an entity.
 genEntityFuncDecls :: String -> Entity -> [CFuncDecl]
 genEntityFuncDecls mName ent =
       [genEntityDescription mName ent, genTables mName ent] ++
@@ -999,5 +959,9 @@ timeMod = "Data.Time"
 -- A symbol from module `Data.Time`.
 inTime :: String -> QName
 inTime f = (timeMod, f)
+
+-- A symbol from module `CPP.ICode.Parser.SQL.ParserInfoType`.
+pinfoType :: String -> CExpr
+pinfoType f = CSymbol ("CPP.ICode.Parser.SQL.ParserInfoType", f)
 
 ----------------------------------------------------------------------------
