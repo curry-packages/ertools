@@ -1,12 +1,12 @@
 {
     "name": "ertools",
-    "version": "3.0.0",
+    "version": "4.0.0",
     "author": "Michael Hanus <mh@informatik.uni-kiel.de>",
     "synopsis": "Tools for dealing with database applications specified by entity-relationship diagrams",
     "category": [ "Database" ],
     "dependencies": {
         "base"           : ">= 3.0.0, < 4.0.0",
-        "abstract-curry" : ">= 3.0.0, < 4.0.0",
+        "abstract-curry" : ">= 4.0.0, < 5.0.0",
         "cdbi"           : ">= 3.0.0, < 4.0.0",
         "currypath"      : ">= 3.0.0, < 4.0.0",
         "directory"      : ">= 3.0.0, < 4.0.0",
