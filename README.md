@@ -82,4 +82,4 @@ of ERD models:
 
 Further infos and contact:
 
-[Michael Hanus](http://www.informatik.uni-kiel.de/~mh)
+[Michael Hanus](http://www.michaelhanus.de/)
